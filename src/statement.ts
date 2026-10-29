@@ -1,10 +1,12 @@
+import { File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Linking, Share } from 'react-native';
-import type { ContactWithBalance, InstrumentWithContact, LedgerRow, TransactionType, WorkType } from './db/types';
+import type { ContactWithBalance, InstrumentWithContact, LedgerRow, TransactionType } from './db/types';
 import type { Dict, Lang } from './i18n/dicts';
 import { daysUntil, formatDate, today } from './utils/dates';
 import { formatMoney } from './utils/money';
+import { workDetail, workTitle } from './work';
 
 interface StatementData {
   contact: ContactWithBalance;
@@ -16,7 +18,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 export function rowLabel(t: Dict, r: LedgerRow, lang: Lang): string {
   if (r.kind === 'T') return r.label || t.txTypes[r.sub as TransactionType];
-  return t.wageLabel(t.workTypes[r.sub as WorkType], r.days ?? 0, formatMoney(r.rate ?? 0, lang));
+  return `${workTitle(t, r)} (${workDetail(t, r, lang)})`;
 }
 
 /** 0612345678 -> 212612345678 (format international WhatsApp, Maroc par défaut). */
@@ -89,7 +91,13 @@ function buildHtml({ contact, ledger, payments }: StatementData, t: Dict, lang: 
 /** Génère le relevé PDF et ouvre le partage Android (WhatsApp, etc.). */
 export async function shareStatementPdf(data: StatementData, t: Dict, lang: Lang) {
   const { uri } = await Print.printToFileAsync({ html: buildHtml(data, t, lang) });
-  await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: t.statementTitle, UTI: 'com.adobe.pdf' });
+  // Le PDF est copié dans le cache de l'app (seul dossier partageable partout, y compris Expo Go),
+  // avec un nom lisible pour le destinataire.
+  const safeName = data.contact.name.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'releve';
+  const target = new File(Paths.cache, `${t.statementTitle.replace(/\s+/g, '-')}-${safeName}.pdf`);
+  if (target.exists) target.delete();
+  await new File(uri).copy(target);
+  await Sharing.shareAsync(target.uri, { mimeType: 'application/pdf', dialogTitle: t.statementTitle, UTI: 'com.adobe.pdf' });
 }
 
 /** Résumé texte envoyé directement sur le WhatsApp du contact. */

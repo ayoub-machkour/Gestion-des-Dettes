@@ -52,8 +52,9 @@ function AppStack() {
         <Stack.Screen name="payment" options={{ title: t.newPaymentTitle }} />
         <Stack.Screen name="instruments/index" options={{ title: t.calendar }} />
         <Stack.Screen name="instruments/new" options={{ title: t.newInstrument }} />
-        <Stack.Screen name="payroll/new" options={{ title: t.payroll }} />
-        <Stack.Screen name="payroll/edit" options={{ title: t.editPayroll }} />
+        <Stack.Screen name="payroll/new" options={{ title: t.newWorkTitle }} />
+        <Stack.Screen name="work-kinds/index" options={{ title: t.workKinds }} />
+        <Stack.Screen name="work-kinds/edit" options={{ title: t.newWorkKindTitle }} />
         <Stack.Screen name="operation" options={{ title: t.operation }} />
         <Stack.Screen name="history" options={{ title: t.history }} />
         <Stack.Screen name="settings" options={{ title: t.settings }} />

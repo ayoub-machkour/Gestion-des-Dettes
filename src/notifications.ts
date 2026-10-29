@@ -16,12 +16,14 @@ export async function initNotifications() {
       shouldSetBadge: false,
     }),
   });
-  await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-    name: 'Échéances / الاستحقاقات',
-    importance: Notifications.AndroidImportance.HIGH,
-    vibrationPattern: [0, 300, 200, 300],
-    lightColor: '#556B2F',
-  });
+  try {
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+      name: 'Échéances / الاستحقاقات',
+      importance: Notifications.AndroidImportance.HIGH,
+    });
+  } catch {
+    // Expo Go ne permet pas toujours de créer le canal : les rappels utilisent alors le canal par défaut.
+  }
 }
 
 export async function hasNotificationPermission(): Promise<boolean> {

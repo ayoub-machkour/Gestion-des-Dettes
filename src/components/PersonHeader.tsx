@@ -4,6 +4,7 @@ import { Text, View } from 'react-native';
 import { getContact } from '../db/repo';
 import type { ContactWithBalance } from '../db/types';
 import { useI18n } from '../i18n';
+import { contactTypeLabel } from '../labels';
 import { colors, font } from '../theme';
 import { Avatar, styles } from './ui';
 
@@ -30,7 +31,7 @@ export function PersonHeader({ contactId, onLoad }: { contactId: string; onLoad?
         <Text style={{ fontSize: font.lg, fontWeight: '800', color: colors.text }} numberOfLines={1}>
           {person.name}
         </Text>
-        <Text style={styles.muted}>{t.contactTypes[person.type]}</Text>
+        <Text style={styles.muted}>{contactTypeLabel(t, person)}</Text>
       </View>
     </View>
   );

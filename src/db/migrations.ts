@@ -1,8 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-const DB_VERSION = 2;
-
-/** Schéma complet actuel (installation neuve). */
+/** Schéma v2 (installation neuve), complété ensuite par les migrations suivantes. */
 export const SCHEMA_SQL = `
   CREATE TABLE contacts (
     id TEXT PRIMARY KEY NOT NULL,
@@ -130,18 +128,61 @@ const V1_TO_V2 = `
   DROP TABLE IF EXISTS undo_state;
 `;
 
+/**
+ * v2 -> v3 : types de personne personnalisés ; types de travail (prix par jour / par unité / forfait) ;
+ * paie avec période, samedi / dimanche comptés ou non, et absences.
+ */
+const V2_TO_V3 = `
+  ALTER TABLE contacts ADD COLUMN type_label TEXT;
+  CREATE TABLE contact_types (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE work_kinds (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    mode TEXT NOT NULL CHECK (mode IN ('DAY','UNIT','FLAT')),
+    unit_label TEXT,
+    price INTEGER NOT NULL CHECK (price >= 0),
+    created_at TEXT NOT NULL
+  );
+
+  -- days_worked = quantité (jours, unités, ou 1 pour un forfait) ; daily_rate = prix unitaire.
+  ALTER TABLE payroll_entries ADD COLUMN work_kind_id TEXT;
+  ALTER TABLE payroll_entries ADD COLUMN work_label TEXT;
+  ALTER TABLE payroll_entries ADD COLUMN pricing_mode TEXT;
+  ALTER TABLE payroll_entries ADD COLUMN unit_label TEXT;
+  ALTER TABLE payroll_entries ADD COLUMN period_start TEXT;
+  ALTER TABLE payroll_entries ADD COLUMN period_end TEXT;
+  ALTER TABLE payroll_entries ADD COLUMN count_saturday INTEGER;
+  ALTER TABLE payroll_entries ADD COLUMN count_sunday INTEGER;
+  ALTER TABLE payroll_entries ADD COLUMN absences REAL;
+`;
+
+const DB_VERSION = 3;
+
 export async function migrateDb(db: SQLiteDatabase) {
   await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
-  const version = row?.user_version ?? 0;
+  let version = row?.user_version ?? 0;
   if (version >= DB_VERSION) return;
 
   await db.withTransactionAsync(async () => {
-    if (version === 0) await db.execAsync(SCHEMA_SQL);
-    if (version === 1) await db.execAsync(V1_TO_V2);
+    if (version === 0) {
+      await db.execAsync(SCHEMA_SQL);
+      version = 2;
+    }
+    if (version === 1) {
+      await db.execAsync(V1_TO_V2);
+      version = 2;
+    }
+    if (version === 2) await db.execAsync(V2_TO_V3);
     await db.execAsync(`PRAGMA user_version = ${DB_VERSION}`);
   });
 }
 
-/** Utilisé par les tests pour vérifier la migration d'une base v1. */
+/** Utilisés par les tests pour reproduire les migrations hors de l'app. */
 export const MIGRATION_V1_TO_V2 = V1_TO_V2;
+export const MIGRATION_V2_TO_V3 = V2_TO_V3;

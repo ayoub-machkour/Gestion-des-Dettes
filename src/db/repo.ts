@@ -14,11 +14,12 @@ import type {
   InstrumentWithContact,
   LedgerRow,
   PayrollEntry,
+  PricingMode,
   TimelineRow,
   Transaction,
   TransactionItem,
   TransactionStatus,
-  WorkType,
+  WorkKind,
 } from './types';
 
 export function statusFor(total: number, paid: number): TransactionStatus {
@@ -206,20 +207,34 @@ export async function getContact(db: SQLiteDatabase, id: string): Promise<Contac
   return db.getFirstAsync<ContactWithBalance>(`${CONTACT_SELECT} WHERE c.id = $id`, { $today: today(), $id: id });
 }
 
-export async function saveContact(db: SQLiteDatabase, input: { id?: string; name: string; type: ContactType }): Promise<string> {
+/** `typeLabel` : type personnalisé (le type de base est alors OTHER). */
+export async function saveContact(
+  db: SQLiteDatabase,
+  input: { id?: string; name: string; type: ContactType; typeLabel?: string | null },
+): Promise<string> {
   const name = input.name.trim();
+  const typeLabel = input.typeLabel?.trim() || null;
+  const type = typeLabel ? 'OTHER' : input.type;
   if (input.id) {
     const id = input.id;
     return act(db, { action: 'CONTACT_EDITED', contactId: id, details: name }, async () => {
-      await db.runAsync('UPDATE contacts SET name = ?, type = ? WHERE id = ?', name, input.type, id);
+      await db.runAsync('UPDATE contacts SET name = ?, type = ?, type_label = ? WHERE id = ?', name, type, typeLabel, id);
       return id;
     });
   }
   const id = randomUUID();
   return act(db, { action: 'CONTACT_ADDED', contactId: id, details: name }, async () => {
-    await db.runAsync('INSERT INTO contacts (id, name, type, created_at) VALUES (?, ?, ?, ?)', id, name, input.type, nowIso());
+    await db.runAsync('INSERT INTO contacts (id, name, type, type_label, created_at) VALUES (?, ?, ?, ?, ?)', id, name, type, typeLabel, nowIso());
     return id;
   });
+}
+
+export async function listContactTypes(db: SQLiteDatabase): Promise<string[]> {
+  return (await db.getAllAsync<{ name: string }>('SELECT name FROM contact_types ORDER BY created_at')).map((r) => r.name);
+}
+
+export async function addContactType(db: SQLiteDatabase, name: string) {
+  await db.runAsync('INSERT OR IGNORE INTO contact_types (id, name, created_at) VALUES (?, ?, ?)', randomUUID(), name.trim(), nowIso());
 }
 
 export async function deleteContact(db: SQLiteDatabase, id: string) {
@@ -244,6 +259,8 @@ export async function deleteContact(db: SQLiteDatabase, id: string) {
 export interface TransactionInput {
   contactId: string;
   direction: Direction;
+  /** Prêt d'argent (un montant, pas d'articles) plutôt qu'achat / vente. */
+  loan?: boolean;
   items: TransactionItem[];
   upfrontPaid: number;
   date: string;
@@ -268,7 +285,13 @@ export async function saveTransaction(db: SQLiteDatabase, input: TransactionInpu
   const items = input.items.map((i) => ({ ...i, name: i.name.trim() }));
   const total = items.reduce((sum, i) => sum + itemTotal(i), 0);
   const description = items.map((i) => i.name).filter(Boolean).join(' · ');
-  const type = input.direction === 'PAYABLE' ? 'DEBT_ITEM' : 'SALE_ON_CREDIT';
+  const type = input.loan
+    ? input.direction === 'PAYABLE'
+      ? 'CASH_LOAN'
+      : 'LOAN_GIVEN'
+    : input.direction === 'PAYABLE'
+      ? 'DEBT_ITEM'
+      : 'SALE_ON_CREDIT';
   const upfront = Math.min(input.upfrontPaid, total);
 
   const writeItems = async (txId: string) => {
@@ -340,58 +363,117 @@ export async function saveTransaction(db: SQLiteDatabase, input: TransactionInpu
   );
 }
 
+// ---------- Types de travail ----------
+
+export async function listWorkKinds(db: SQLiteDatabase): Promise<WorkKind[]> {
+  return db.getAllAsync<WorkKind>('SELECT id, name, mode, unit_label, price FROM work_kinds ORDER BY name COLLATE NOCASE');
+}
+
+export async function getWorkKind(db: SQLiteDatabase, id: string): Promise<WorkKind | null> {
+  return db.getFirstAsync<WorkKind>('SELECT id, name, mode, unit_label, price FROM work_kinds WHERE id = ?', id);
+}
+
+export async function saveWorkKind(db: SQLiteDatabase, input: Omit<WorkKind, 'id'>, id?: string): Promise<string> {
+  const unit = input.mode === 'UNIT' ? input.unit_label?.trim() || null : null;
+  if (id) {
+    await db.runAsync('UPDATE work_kinds SET name = ?, mode = ?, unit_label = ?, price = ? WHERE id = ?', input.name.trim(), input.mode, unit, input.price, id);
+    return id;
+  }
+  const newId = randomUUID();
+  await db.runAsync(
+    'INSERT INTO work_kinds (id, name, mode, unit_label, price, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    newId,
+    input.name.trim(),
+    input.mode,
+    unit,
+    input.price,
+    nowIso(),
+  );
+  return newId;
+}
+
+/** Les paies déjà saisies gardent leur libellé et leur prix : seul le modèle est supprimé. */
+export async function deleteWorkKind(db: SQLiteDatabase, id: string) {
+  await db.runAsync('DELETE FROM work_kinds WHERE id = ?', id);
+}
+
 // ---------- Paie ----------
 
-export interface PayrollInput {
-  workType: WorkType;
-  days: number;
-  rate: number;
+/** Travail commun à tous les ouvriers saisis ensemble. */
+export interface WorkInput {
+  kindId: string | null;
+  label: string;
+  mode: PricingMode;
+  unitLabel: string | null;
+  price: number;
   date: string;
-  paidNow: boolean;
+  periodStart: string | null;
+  periodEnd: string | null;
+  countSaturday: boolean;
+  countSunday: boolean;
+}
+
+/** Part de chaque ouvrier : quantité (jours après absences, unités, ou 1) et absences. */
+export interface WorkerShare {
+  contactId: string;
+  quantity: number;
+  absences: number;
 }
 
 export async function getPayroll(db: SQLiteDatabase, id: string): Promise<PayrollEntry | null> {
   return db.getFirstAsync<PayrollEntry>('SELECT * FROM payroll_entries WHERE id = ?', id);
 }
 
+const workValues = (work: WorkInput, share: WorkerShare) => [
+  work.mode === 'DAY' ? 'DAILY_WAGE' : 'GROUP_CONTRACT',
+  work.kindId,
+  work.label.trim(),
+  work.mode,
+  work.mode === 'UNIT' ? work.unitLabel : null,
+  work.mode === 'DAY' ? work.periodStart : null,
+  work.mode === 'DAY' ? work.periodEnd : null,
+  work.mode === 'DAY' ? Number(work.countSaturday) : null,
+  work.mode === 'DAY' ? Number(work.countSunday) : null,
+  work.mode === 'DAY' ? share.absences : null,
+  share.quantity,
+  work.price,
+  Math.round(share.quantity * work.price),
+  work.date,
+];
+
+const WORK_COLUMNS = `work_type, work_kind_id, work_label, pricing_mode, unit_label, period_start, period_end,
+  count_saturday, count_sunday, absences, days_worked, daily_rate, total_due, work_date`;
+
 /** Une ligne de paie par ouvrier, en une seule transaction ; une ligne de journal par ouvrier. */
-export async function createPayrollGroup(db: SQLiteDatabase, contactIds: string[], input: PayrollInput) {
-  const totalDue = Math.round(input.days * input.rate);
+export async function createWorkEntries(db: SQLiteDatabase, shares: WorkerShare[], work: WorkInput, paidNow: boolean) {
   await db.withTransactionAsync(async () => {
-    for (const contactId of contactIds) {
+    for (const share of shares) {
       const id = randomUUID();
+      const total = Math.round(share.quantity * work.price);
       await db.runAsync(
-        `INSERT INTO payroll_entries (id, contact_id, work_type, days_worked, daily_rate, total_due, upfront_paid, paid_amount, work_date, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 'PENDING_PAYMENT', ?)`,
+        `INSERT INTO payroll_entries (${WORK_COLUMNS}, id, contact_id, upfront_paid, paid_amount, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'PENDING_PAYMENT', ?)`,
+        ...workValues(work, share),
         id,
-        contactId,
-        input.workType,
-        input.days,
-        input.rate,
-        totalDue,
-        input.paidNow ? totalDue : 0,
-        input.date,
+        share.contactId,
+        paidNow ? total : 0,
         nowIso(),
       );
-      await insertLog(db, { action: 'PAYROLL_ADDED', entityType: 'P', entityId: id, contactId, direction: 'PAYABLE', amount: totalDue });
-      await recomputeContact(db, contactId);
+      await insertLog(db, { action: 'PAYROLL_ADDED', entityType: 'P', entityId: id, contactId: share.contactId, direction: 'PAYABLE', amount: total, details: work.label });
+      await recomputeContact(db, share.contactId);
     }
   });
 }
 
-export async function updatePayroll(db: SQLiteDatabase, id: string, input: Omit<PayrollInput, 'paidNow'> & { upfrontPaid: number }) {
+export async function updateWorkEntry(db: SQLiteDatabase, id: string, share: WorkerShare, work: WorkInput, upfrontPaid: number) {
   const entry = await getPayroll(db, id);
   if (!entry) return;
-  const totalDue = Math.round(input.days * input.rate);
-  await act(db, { action: 'EDITED', entityType: 'P', entityId: id, contactId: entry.contact_id, direction: 'PAYABLE', amount: totalDue }, async () => {
+  const total = Math.round(share.quantity * work.price);
+  await act(db, { action: 'EDITED', entityType: 'P', entityId: id, contactId: entry.contact_id, direction: 'PAYABLE', amount: total, details: work.label }, async () => {
     await db.runAsync(
-      'UPDATE payroll_entries SET work_type = ?, days_worked = ?, daily_rate = ?, total_due = ?, upfront_paid = ?, work_date = ? WHERE id = ?',
-      input.workType,
-      input.days,
-      input.rate,
-      totalDue,
-      Math.min(input.upfrontPaid, totalDue),
-      input.date,
+      `UPDATE payroll_entries SET (${WORK_COLUMNS}, upfront_paid) = (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) WHERE id = ?`,
+      ...workValues(work, share),
+      Math.min(upfrontPaid, total),
       id,
     );
     await recomputeContact(db, entry.contact_id);
@@ -400,19 +482,23 @@ export async function updatePayroll(db: SQLiteDatabase, id: string, input: Omit<
 
 // ---------- Fiche d'une personne ----------
 
+// Colonnes de travail (WorkFields) : vides pour les achats et paiements.
+const NO_WORK = 'NULL AS work_label, NULL AS pricing_mode, NULL AS unit_label, NULL AS period_start, NULL AS period_end, NULL AS absences';
+const WORK = 'work_label, pricing_mode, unit_label, period_start, period_end, absences';
+
 export async function getTimeline(db: SQLiteDatabase, contactId: string): Promise<TimelineRow[]> {
   return db.getAllAsync<TimelineRow>(
     `SELECT 'T' AS kind, id, transaction_date AS d, created_at AS c, description AS title, transaction_type AS sub, direction,
-            total_amount AS amount, paid_amount AS paid, due_date AS due, status, NULL AS days, NULL AS rate,
+            total_amount AS amount, paid_amount AS paid, due_date AS due, status, NULL AS days, NULL AS rate, ${NO_WORK},
             (SELECT COUNT(*) FROM attachments a WHERE a.entity_type = 'T' AND a.entity_id = t.id) AS photos
        FROM transactions t WHERE contact_id = $c
      UNION ALL
-     SELECT 'P', id, work_date, created_at, NULL, work_type, 'PAYABLE', total_due, paid_amount, NULL, status, days_worked, daily_rate,
+     SELECT 'P', id, work_date, created_at, NULL, work_type, 'PAYABLE', total_due, paid_amount, NULL, status, days_worked, daily_rate, ${WORK},
             (SELECT COUNT(*) FROM attachments a WHERE a.entity_type = 'P' AND a.entity_id = p.id)
        FROM payroll_entries p WHERE contact_id = $c
      UNION ALL
      SELECT 'I', id, CASE WHEN instrument_type = 'CASH' THEN issue_date ELSE maturity_due_date END, created_at, reference_number,
-            instrument_type, direction, amount, NULL, maturity_due_date, status, NULL, NULL,
+            instrument_type, direction, amount, NULL, maturity_due_date, status, NULL, NULL, ${NO_WORK},
             (SELECT COUNT(*) FROM attachments a WHERE a.entity_type = 'I' AND a.entity_id = i.id)
        FROM instruments i WHERE contact_id = $c
      ORDER BY d DESC, c DESC`,
@@ -424,11 +510,11 @@ export async function getTimeline(db: SQLiteDatabase, contactId: string): Promis
 export async function getLedger(db: SQLiteDatabase, contactId: string): Promise<LedgerRow[]> {
   return db.getAllAsync<LedgerRow>(
     `SELECT 'T' AS kind, id, direction, transaction_date AS d, description AS label, transaction_type AS sub,
-            total_amount AS total, paid_amount AS paid, due_date AS due, NULL AS days, NULL AS rate, created_at AS c,
+            total_amount AS total, paid_amount AS paid, due_date AS due, NULL AS days, NULL AS rate, created_at AS c, ${NO_WORK},
             (SELECT COUNT(*) FROM attachments a WHERE a.entity_type = 'T' AND a.entity_id = t.id) AS photos
        FROM transactions t WHERE contact_id = $c
      UNION ALL
-     SELECT 'P', id, 'PAYABLE', work_date, '', work_type, total_due, paid_amount, NULL, days_worked, daily_rate, created_at,
+     SELECT 'P', id, 'PAYABLE', work_date, '', work_type, total_due, paid_amount, NULL, days_worked, daily_rate, created_at, ${WORK},
             (SELECT COUNT(*) FROM attachments a WHERE a.entity_type = 'P' AND a.entity_id = p.id)
        FROM payroll_entries p WHERE contact_id = $c
      ORDER BY d, c`,

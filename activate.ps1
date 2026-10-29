@@ -7,10 +7,12 @@ $env:PATH = "$(Join-Path $envDir 'node');$(Join-Path $envDir 'npm-global');$(Joi
 $env:npm_config_cache = Join-Path $envDir 'npm-cache'
 $env:npm_config_prefix = Join-Path $envDir 'npm-global'
 $env:EXPO_NO_TELEMETRY = '1'
+# Expo cherche adb dans $ANDROID_HOME\platform-tools : on pointe vers .env (pas besoin d'Android Studio).
+$env:ANDROID_HOME = $envDir
 function global:deactivate {
   $envDir = $env:AGRICOMPTE_ENV
   $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notlike "$envDir*" }) -join ';'
-  Remove-Item Env:npm_config_cache, Env:npm_config_prefix, Env:AGRICOMPTE_ENV, Env:EXPO_NO_TELEMETRY -ErrorAction SilentlyContinue
+  Remove-Item Env:npm_config_cache, Env:npm_config_prefix, Env:AGRICOMPTE_ENV, Env:EXPO_NO_TELEMETRY, Env:ANDROID_HOME -ErrorAction SilentlyContinue
   Remove-Item Function:\deactivate
 }
 Write-Host "AgriCompte env actif - node $(node --version)" -ForegroundColor Green

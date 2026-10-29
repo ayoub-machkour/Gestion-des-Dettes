@@ -13,6 +13,7 @@ import { useAppState } from '../src/state';
 import { colors, font } from '../src/theme';
 import { formatDate } from '../src/utils/dates';
 import { formatMoney } from '../src/utils/money';
+import { workDetail, workTitle } from '../src/work';
 
 type Loaded =
   | { kind: 'T'; tx: Transaction; items: TransactionItem[]; contactName: string }
@@ -75,7 +76,7 @@ export default function Operation() {
     data.kind === 'T'
       ? { pathname: '/credit/new' as const, params: { id, contactId: data.tx.contact_id } }
       : data.kind === 'P'
-        ? { pathname: '/payroll/edit' as const, params: { id } }
+        ? { pathname: '/payroll/new' as const, params: { id } }
         : data.inst.instrument_type === 'CASH'
           ? { pathname: '/payment' as const, params: { id, contactId: data.inst.contact_id } }
           : { pathname: '/instruments/new' as const, params: { id, contactId: data.inst.contact_id } };
@@ -128,12 +129,13 @@ export default function Operation() {
   const contactId = data.kind === 'T' ? data.tx.contact_id : data.entry.contact_id;
   const rest = total - paid;
   const c = DIRECTION_COLORS[direction];
+  const loan = data.kind === 'T' && (data.tx.transaction_type === 'CASH_LOAN' || data.tx.transaction_type === 'LOAN_GIVEN');
 
   return (
     <Screen>
       <Card style={{ gap: 12 }}>
         <View style={[styles.row, { gap: 6 }]}>
-          <Pill text={data.kind === 'T' ? t.txTitle[direction] : t.payroll} tone={direction === 'PAYABLE' ? 'danger' : 'success'} />
+          <Pill text={data.kind === 'T' ? t.txTypes[data.tx.transaction_type] : t.payroll} tone={direction === 'PAYABLE' ? 'danger' : 'success'} />
           <LateBadge due={due} rest={rest} />
         </View>
         <Text style={{ fontSize: font.lg, fontWeight: '800', color: colors.text }}>{data.contactName}</Text>
@@ -142,7 +144,9 @@ export default function Operation() {
           {due ? `   ·   ⏳ ${formatDate(due)}` : ''}
         </Text>
 
-        {data.kind === 'T' ? (
+        {data.kind === 'T' && loan ? (
+          data.tx.description ? <Text style={[styles.body, { fontWeight: '600' }]}>{data.tx.description}</Text> : null
+        ) : data.kind === 'T' ? (
           <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 }}>
             {data.items.map((item, index) => (
               <View key={index} style={styles.row}>
@@ -157,9 +161,15 @@ export default function Operation() {
             ))}
           </View>
         ) : (
-          <Text style={[styles.body, { fontWeight: '600' }]}>
-            {t.wageLabel(t.workTypes[data.entry.work_type], data.entry.days_worked, formatMoney(data.entry.daily_rate, lang))}
-          </Text>
+          <View style={{ gap: 4, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 }}>
+            <Text style={[styles.body, { fontWeight: '700' }]}>{workTitle(t, data.entry)}</Text>
+            <Text style={styles.muted}>{workDetail(t, { ...data.entry, days: data.entry.days_worked, rate: data.entry.daily_rate }, lang)}</Text>
+            {data.entry.absences ? (
+              <Text style={styles.muted}>
+                {t.absences} : {t.daysCount(data.entry.absences)}
+              </Text>
+            ) : null}
+          </View>
         )}
 
         <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 }}>

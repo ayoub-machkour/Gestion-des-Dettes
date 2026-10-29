@@ -206,9 +206,7 @@ export function DateField({
     DateTimePickerAndroid.open({
       value: value ? parseISODate(value) : new Date(),
       mode: 'date',
-      onChange: (event, date) => {
-        if (event.type === 'set' && date) onChange(toISODate(date));
-      },
+      onValueChange: (_event, date) => onChange(toISODate(date)),
     });
   return (
     <View style={styles.field}>

@@ -7,6 +7,7 @@ import { Avatar, Button, Empty, IconButton, Pill, styles } from '../src/componen
 import { countDueInstruments, listContacts } from '../src/db/repo';
 import type { ContactWithBalance } from '../src/db/types';
 import { useI18n } from '../src/i18n';
+import { contactTypeLabel } from '../src/labels';
 import { useAppState } from '../src/state';
 import { colors, font, radius, shadow } from '../src/theme';
 import { formatMoney } from '../src/utils/money';
@@ -85,7 +86,7 @@ function PersonCard({ person, onPress }: { person: ContactWithBalance; onPress: 
           {person.name}
         </Text>
         <View style={[styles.row, { gap: 6 }]}>
-          <Text style={styles.muted}>{t.contactTypes[person.type]}</Text>
+          <Text style={styles.muted}>{contactTypeLabel(t, person)}</Text>
           {late > 0 ? <Pill text={`⏱ ${t.lateBy(late)}`} tone="danger" /> : null}
         </View>
       </View>

@@ -5,8 +5,10 @@ import { Alert, Pressable, Text, View } from 'react-native';
 import { LateBadge } from '../../src/components/domain';
 import { Avatar, Button, Empty, Pill, Screen, SectionHeader, styles } from '../../src/components/ui';
 import { getContact, getLedger, getTimeline, listInstruments } from '../../src/db/repo';
-import type { ContactWithBalance, Direction, InstrumentType, TimelineRow, WorkType } from '../../src/db/types';
+import type { ContactWithBalance, Direction, InstrumentType, TimelineRow, TransactionType } from '../../src/db/types';
 import { useI18n } from '../../src/i18n';
+import { contactTypeLabel } from '../../src/labels';
+import { workDetail, workTitle } from '../../src/work';
 import { useAppState } from '../../src/state';
 import { sendStatementWhatsApp, shareStatementPdf } from '../../src/statement';
 import { colors, font, radius } from '../../src/theme';
@@ -31,7 +33,13 @@ export default function PersonPage() {
   );
 
   if (!person) return null;
-  const employee = person.type === 'EMPLOYEE';
+  // Action principale selon le type : travail pour un ouvrier, prêt pour la famille, achat sinon.
+  const main =
+    person.type === 'EMPLOYEE'
+      ? { label: t.addWork, go: () => router.push({ pathname: '/payroll/new', params: { contactId: id } }) }
+      : person.type === 'FAMILY_LENDER'
+        ? { label: t.newLoan, go: () => router.push({ pathname: '/credit/new', params: { contactId: id, mode: 'loan' } }) }
+        : { label: t.newPurchase, go: () => router.push({ pathname: '/credit/new', params: { contactId: id } }) };
 
   const askStatement = () =>
     Alert.alert(t.statementTitle, person.name, [
@@ -67,7 +75,7 @@ export default function PersonPage() {
       <View style={[styles.card, { alignItems: 'center', paddingVertical: 24, gap: 10 }]}>
         <Avatar name={person.name} size={72} />
         <Text style={{ fontSize: font.xl, fontWeight: '800', color: colors.text, textAlign: 'center' }}>{person.name}</Text>
-        <Text style={styles.muted}>{t.contactTypes[person.type]}</Text>
+        <Text style={styles.muted}>{contactTypeLabel(t, person)}</Text>
         <View style={{ alignSelf: 'stretch', gap: 8, marginTop: 6 }}>
           {balanceRows.length ? (
             balanceRows.map((b) => (
@@ -85,16 +93,12 @@ export default function PersonPage() {
       </View>
 
       <View style={styles.row}>
-        <Button
-          label={employee ? t.addWork : t.newPurchase}
-          style={{ flex: 1 }}
-          onPress={() => (employee ? router.push({ pathname: '/payroll/new', params: { contactId: id } }) : router.push({ pathname: '/credit/new', params: { contactId: id } }))}
-        />
+        <Button label={main.label} style={{ flex: 1 }} onPress={main.go} />
         <Button label={t.payment} variant="success" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/payment', params: { contactId: id } })} />
       </View>
       <View style={styles.row}>
-        <Button label={t.check} variant="secondary" size="md" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/instruments/new', params: { contactId: id } })} />
-        <Button label={t.statement} variant="secondary" size="md" style={{ flex: 1 }} onPress={askStatement} />
+        <Button label={t.check} variant="soft" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/instruments/new', params: { contactId: id } })} />
+        <Button label={t.statement} variant="secondary" style={{ flex: 1 }} onPress={askStatement} />
       </View>
 
       <SectionHeader title={t.operations} />
@@ -112,6 +116,7 @@ function TimelineItem({ row, onPress }: { row: TimelineRow; onPress: () => void 
   let icon: string;
   let title: string;
   let amountColor = colors.text;
+  let subtitle: string | null = null;
   let footer: React.ReactNode = null;
 
   if (row.kind === 'I') {
@@ -132,11 +137,10 @@ function TimelineItem({ row, onPress }: { row: TimelineRow; onPress: () => void 
       );
     }
   } else {
-    icon = row.kind === 'P' ? '👷' : row.direction === 'PAYABLE' ? '🛒' : '🧺';
-    title =
-      row.kind === 'P'
-        ? t.wageLabel(t.workTypes[row.sub as WorkType], row.days ?? 0, formatMoney(row.rate ?? 0, lang))
-        : row.title || t.txTitle[row.direction];
+    const loan = row.sub === 'CASH_LOAN' || row.sub === 'LOAN_GIVEN';
+    icon = row.kind === 'P' ? '👷' : loan ? '💰' : row.direction === 'PAYABLE' ? '🛒' : '🧺';
+    title = row.kind === 'P' ? workTitle(t, row) : row.title || t.txTypes[row.sub as TransactionType];
+    if (row.kind === 'P') subtitle = workDetail(t, row, lang);
     amountColor = dirColor(row.direction);
     const rest = row.amount - (row.paid ?? 0);
     footer = (
@@ -157,6 +161,7 @@ function TimelineItem({ row, onPress }: { row: TimelineRow; onPress: () => void 
           <Text style={{ fontSize: font.md, fontWeight: '700', color: colors.text }} numberOfLines={2}>
             {title}
           </Text>
+          {subtitle ? <Text style={[styles.muted, { color: colors.textSoft }]}>{subtitle}</Text> : null}
           <Text style={styles.muted}>
             {formatDate(row.d)}
             {row.photos ? `  ·  📎 ${row.photos}` : ''}

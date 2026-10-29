@@ -27,10 +27,33 @@ export type ActivityAction =
 
 // Montants : entiers en centimes. Dates métier : 'YYYY-MM-DD'.
 
+/** Mode de paiement d'un travail : par jour (période), par unité (plateaux…), ou forfait. */
+export type PricingMode = 'DAY' | 'UNIT' | 'FLAT';
+
+export interface WorkKind {
+  id: string;
+  name: string;
+  mode: PricingMode;
+  unit_label: string | null;
+  price: number;
+}
+
+/** Champs de travail partagés par la paie et ses affichages. */
+export interface WorkFields {
+  work_label: string | null;
+  pricing_mode: PricingMode | null;
+  unit_label: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  absences: number | null;
+}
+
 export interface Contact {
   id: string;
   name: string;
   type: ContactType;
+  /** Type personnalisé (ex. « Transporteur ») ; dans ce cas `type` vaut OTHER. */
+  type_label: string | null;
   phone: string | null;
   notes: string | null;
   created_at: string;
@@ -67,16 +90,21 @@ export interface TransactionItem {
   unit_price: number;
 }
 
-export interface PayrollEntry {
+export interface PayrollEntry extends WorkFields {
   id: string;
   contact_id: string;
   work_type: WorkType;
+  work_kind_id: string | null;
+  /** Quantité : jours, unités, ou 1 pour un forfait. */
   days_worked: number;
+  /** Prix unitaire. */
   daily_rate: number;
   total_due: number;
   upfront_paid: number;
   paid_amount: number;
   work_date: string;
+  count_saturday: number | null;
+  count_sunday: number | null;
   status: PayrollStatus;
   created_at: string;
 }
@@ -111,7 +139,7 @@ export interface Attachment {
 }
 
 /** Ligne du grand livre : un achat / crédit (T) ou une paie (P). */
-export interface LedgerRow {
+export interface LedgerRow extends WorkFields {
   kind: 'T' | 'P';
   id: string;
   direction: Direction;
@@ -127,7 +155,7 @@ export interface LedgerRow {
 }
 
 /** Une ligne de la fiche d'une personne : achat/crédit, paie, paiement ou effet. */
-export interface TimelineRow {
+export interface TimelineRow extends WorkFields {
   kind: EntityType;
   id: string;
   d: string;
