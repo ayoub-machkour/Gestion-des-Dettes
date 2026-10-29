@@ -3,7 +3,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Avatar, Button, Empty, IconButton, Pill, styles } from '../src/components/ui';
+import { Avatar, Button, Empty, MenuButton, Pill, styles } from '../src/components/ui';
 import { countDueInstruments, listContacts } from '../src/db/repo';
 import type { ContactWithBalance } from '../src/db/types';
 import { useI18n } from '../src/i18n';
@@ -47,19 +47,18 @@ export default function Home() {
                 <Text style={styles.title}>{t.people}</Text>
                 {people?.length ? <Text style={styles.muted}>{t.peopleCount(people.length)}</Text> : null}
               </View>
-              <IconButton icon="📅" badge={dueCount} onPress={() => router.push('/instruments')} />
-              <IconButton icon="☰" onPress={() => router.push('/menu')} />
+              <MenuButton badge={dueCount} onPress={() => router.push('/menu')} />
             </View>
             {(people?.length ?? 0) > 4 ? (
-              <TextInput style={styles.input} value={search} onChangeText={setSearch} placeholder={`🔍  ${t.search}`} placeholderTextColor={colors.muted} />
+              <TextInput style={styles.input} value={search} onChangeText={setSearch} placeholder={t.search} placeholderTextColor={colors.muted} />
             ) : null}
           </View>
         }
         ListEmptyComponent={
           people === null ? undefined : people.length ? (
-            <Empty icon="🔍" title={t.noResults} />
+            <Empty title={t.noResults} />
           ) : (
-            <Empty icon="🤝" title={t.emptyPeopleTitle} text={t.emptyPeopleText} />
+            <Empty title={t.emptyPeopleTitle} text={t.emptyPeopleText} />
           )
         }
         renderItem={({ item }) => <PersonCard person={item} onPress={() => router.push(`/contacts/${item.id}`)} />}
@@ -87,7 +86,7 @@ function PersonCard({ person, onPress }: { person: ContactWithBalance; onPress: 
         </Text>
         <View style={[styles.row, { gap: 6 }]}>
           <Text style={styles.muted}>{contactTypeLabel(t, person)}</Text>
-          {late > 0 ? <Pill text={`⏱ ${t.lateBy(late)}`} tone="danger" /> : null}
+          {late > 0 ? <Pill text={t.lateBy(late)} tone="danger" /> : null}
         </View>
       </View>
       <View style={{ alignItems: 'flex-end', gap: 2 }}>

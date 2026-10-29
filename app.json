@@ -6,6 +6,7 @@
     "scheme": "agricompte",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
     "platforms": [
       "android"
     ],
@@ -13,7 +14,8 @@
       "package": "ma.agricompte.app",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#556B2F"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
       },
       "permissions": [
         "POST_NOTIFICATIONS",
@@ -44,12 +46,20 @@
       [
         "expo-notifications",
         {
-          "color": "#556B2F"
+          "color": "#1F2E46"
         }
       ],
       "expo-status-bar",
       "@react-native-community/datetimepicker",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "backgroundColor": "#FFFFFF"
+        }
+      ]
     ]
   }
 }

@@ -57,7 +57,7 @@ export default function Settings() {
       )}
 
       <Card style={{ marginTop: 16 }}>
-        <Text style={styles.body}>🔒 {t.offlineNote}</Text>
+        <Text style={styles.body}>{t.offlineNote}</Text>
         <Text style={styles.muted}>AgriCompte / الفلاح · v1.1.0</Text>
       </Card>
     </Screen>

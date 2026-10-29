@@ -29,7 +29,7 @@ export default function WorkKinds() {
 
   return (
     <Screen footer={<Button label={t.newWorkKind} onPress={() => router.push('/work-kinds/edit')} />}>
-      {kinds && kinds.length === 0 ? <Empty icon="🧰" title={t.emptyWorkKindsTitle} text={t.emptyWorkKindsText} /> : null}
+      {kinds && kinds.length === 0 ? <Empty title={t.emptyWorkKindsTitle} text={t.emptyWorkKindsText} /> : null}
       {kinds?.map((k) => (
         <Pressable
           key={k.id}

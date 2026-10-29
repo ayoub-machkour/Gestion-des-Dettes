@@ -23,7 +23,7 @@ export const fr = {
   noResults: 'Aucun résultat',
   iOwe: 'Je dois',
   owesMe: 'Me doit',
-  settled: 'Réglé ✓',
+  settled: 'Réglé',
 
   // Menu
   menu: 'Menu',
@@ -45,11 +45,11 @@ export const fr = {
   namePlaceholder: 'ex : Magasin Attawfiq',
   type: 'Type',
   contactTypes: {
-    SUPPLIER: '🏪 Fournisseur',
-    CUSTOMER: '🧺 Client',
-    FAMILY_LENDER: '👪 Famille',
-    EMPLOYEE: '👷 Ouvrier',
-    OTHER: '👤 Autre',
+    SUPPLIER: 'Fournisseur',
+    CUSTOMER: 'Client',
+    FAMILY_LENDER: 'Famille',
+    EMPLOYEE: 'Ouvrier',
+    OTHER: 'Autre',
   } as Record<ContactType, string>,
   otherType: '+ Autre type',
   newTypeName: 'Nom du nouveau type',
@@ -67,17 +67,17 @@ export const fr = {
   newPurchase: '+ Achat / Crédit',
   newLoan: '+ Prêt d’argent',
   addWork: '+ Travail',
-  payment: '💵 Paiement',
+  payment: 'Paiement',
   check: '+ Chèque / Traite',
-  statement: '📤 Envoyer le relevé',
-  edit: '✏️ Modifier',
+  statement: 'Envoyer le relevé',
+  edit: 'Modifier',
   operations: 'Opérations',
   emptyOpsTitle: 'Aucune opération',
   emptyOpsText: 'Ajoutez un achat à crédit ou un paiement.',
   txTitle: { PAYABLE: 'Achat à crédit', RECEIVABLE: 'Vente à crédit' } as Record<Direction, string>,
   paymentTitle: { PAYABLE: 'Paiement effectué', RECEIVABLE: 'Paiement reçu' } as Record<Direction, string>,
   restAmount: (amount: string) => `Reste ${amount}`,
-  paid: 'Payé ✓',
+  paid: 'Payé',
 
   // Achat / crédit
   newCreditTitle: 'Nouvel achat / crédit',
@@ -103,8 +103,8 @@ export const fr = {
   invoicePhoto: 'Photo de la facture (optionnel)',
 
   // Prêt d’argent
-  purchaseMode: '🛒 Achat',
-  loanMode: '💰 Prêt d’argent',
+  purchaseMode: 'Achat',
+  loanMode: 'Prêt d’argent',
   loanDirection: { PAYABLE: 'Il m’a prêté', RECEIVABLE: 'Je lui ai prêté' } as Record<Direction, string>,
   loanAmount: 'Montant du prêt',
   loanDate: 'Date du prêt',
@@ -148,7 +148,7 @@ export const fr = {
   maturityDate: 'Date d’échéance',
   reminder: 'Me rappeler',
   daysBefore: (n: number) => `${n} j avant`,
-  markPaid: '✓ Marquer comme payé',
+  markPaid: 'Marquer comme payé',
   cancelInstrument: 'Annuler',
   confirmMarkPaid: 'Confirmer que ce chèque / cette traite a été payé(e) ?',
   confirmCancel: 'Annuler ce chèque / cette traite ?',
@@ -165,15 +165,17 @@ export const fr = {
 
   // Détail d’une opération
   operation: 'Détail',
-  recordPayment: '💵 Enregistrer un paiement',
+  recordPayment: 'Enregistrer un paiement',
   totalLabel: 'Total',
   paidLabel: 'Payé',
   restLabel: 'Reste',
-  proofs: '📎 Justificatifs',
+  proofs: 'Justificatifs',
   proofOptional: 'Photo justificative (optionnel)',
   noPhotos: 'Aucune photo',
-  takePhoto: '📷 Photo',
-  fromGallery: '🖼 Galerie',
+  photoCount: (n: number) => (n === 1 ? '1 photo' : `${n} photos`),
+  dueShort: 'Échéance',
+  takePhoto: 'Prendre une photo',
+  fromGallery: 'Depuis la galerie',
   deletePhotoConfirm: 'Supprimer cette photo ?',
   deleteConfirm: 'Supprimer définitivement cette opération ?',
   deleted: 'Supprimé',
@@ -217,7 +219,7 @@ export const fr = {
   newWorkTitle: 'Nouveau travail',
   editWorkTitle: 'Modifier le travail',
   chooseWork: 'Type de travail',
-  manage: '⚙️ Gérer',
+  manage: 'Gérer',
   defineWorkKinds: 'Définir les types de travail',
   noWorkKindsText: 'Définissez d’abord vos travaux (récolte, irrigation…) et leurs prix.',
   period: 'Période de travail',
@@ -242,11 +244,11 @@ export const fr = {
   // Historique
   historyFilters: {
     ALL: 'Tout',
-    CREDITS: '🛒 Achats',
-    PAYMENTS: '💵 Paiements',
-    INSTRUMENTS: '📄 Chèques',
-    PAYROLL: '👷 Ouvriers',
-    CHANGES: '✏️ Modifications',
+    CREDITS: 'Achats',
+    PAYMENTS: 'Paiements',
+    INSTRUMENTS: 'Chèques',
+    PAYROLL: 'Ouvriers',
+    CHANGES: 'Modifications',
   } as Record<HistoryFilter, string>,
   emptyHistory: 'Aucune opération',
   actions: {
@@ -269,8 +271,8 @@ export const fr = {
 
   // Relevé de compte
   statementTitle: 'Relevé de compte',
-  statementPdf: '📄 PDF',
-  statementText: '💬 Message',
+  statementPdf: 'PDF',
+  statementText: 'Message WhatsApp',
   txTypes: {
     DEBT_ITEM: 'Achat à crédit',
     CASH_LOAN: 'Argent emprunté',
@@ -294,8 +296,8 @@ export const fr = {
   receivedByMe: 'reçu',
 
   // Rappels
-  notifSoonTitle: (n: number) => `⚠️ Échéance dans ${n} j`,
-  notifTodayTitle: '🔴 Échéance aujourd’hui',
+  notifSoonTitle: (n: number) => `Échéance dans ${n} j`,
+  notifTodayTitle: 'Échéance aujourd’hui',
   notifBody: (direction: Direction, type: string, ref: string | null, name: string, amount: string, date: string) =>
     `${direction === 'PAYABLE' ? 'À payer' : 'À encaisser'} : ${type}${ref ? ' n° ' + ref : ''} — ${name} : ${amount} le ${date}`,
 
@@ -303,7 +305,7 @@ export const fr = {
   language: 'Langue',
   notifications: 'Notifications',
   enableNotifications: 'Activer les notifications',
-  notifEnabled: 'Notifications activées ✓',
+  notifEnabled: 'Notifications activées',
   notifDenied: 'Notifications refusées. Activez-les dans les réglages Android pour recevoir les rappels.',
   offlineNote: 'Toutes les données restent sur votre téléphone et fonctionnent sans Internet.',
   languageRestart: 'L’application va redémarrer pour appliquer la langue.',

@@ -94,7 +94,7 @@ export default function InstrumentForm() {
       <Field label={t.amount} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0" error={errors.amount} style={{ fontSize: 22, fontWeight: '800' }} />
       <DateField label={t.maturityDate} value={maturity} onChange={setMaturity} />
       <View style={styles.field}>
-        <Label>🔔 {t.reminder}</Label>
+        <Label>{t.reminder}</Label>
         <Chips options={REMINDERS.map((n) => ({ value: n, label: t.daysBefore(n) }))} value={reminderDays} onChange={(v) => v && setReminderDays(v)} />
       </View>
       <Field label={t.reference} value={reference} onChangeText={setReference} placeholder="0001234" />

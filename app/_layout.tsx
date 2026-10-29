@@ -2,7 +2,9 @@ import * as Notifications from 'expo-notifications';
 import { Stack, useRouter } from 'expo-router';
 import { SQLiteProvider } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { View } from 'react-native';
+import { AnimatedSplash } from '../src/components/AnimatedSplash';
 import { migrateDb } from '../src/db/migrations';
 import { I18nProvider, useI18n } from '../src/i18n';
 import { initNotifications } from '../src/notifications';
@@ -10,14 +12,19 @@ import { AppStateProvider } from '../src/state';
 import { colors, font } from '../src/theme';
 
 export default function RootLayout() {
+  const [splashDone, setSplashDone] = useState(false);
+  const hideSplash = useCallback(() => setSplashDone(true), []);
   return (
-    <SQLiteProvider databaseName="agricompte.db" onInit={migrateDb}>
-      <I18nProvider>
-        <AppStateProvider>
-          <AppStack />
-        </AppStateProvider>
-      </I18nProvider>
-    </SQLiteProvider>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <SQLiteProvider databaseName="agricompte.db" onInit={migrateDb}>
+        <I18nProvider>
+          <AppStateProvider>
+            <AppStack />
+          </AppStateProvider>
+        </I18nProvider>
+      </SQLiteProvider>
+      {splashDone ? null : <AnimatedSplash onDone={hideSplash} />}
+    </View>
   );
 }
 

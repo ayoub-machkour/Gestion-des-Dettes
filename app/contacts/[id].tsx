@@ -86,7 +86,7 @@ export default function PersonPage() {
             ))
           ) : (
             <View style={{ backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: 14, alignItems: 'center' }}>
-              <Text style={{ fontSize: font.lg, fontWeight: '700', color: colors.success }}>✓ {t.allSettled}</Text>
+              <Text style={{ fontSize: font.lg, fontWeight: '700', color: colors.success }}>{t.allSettled}</Text>
             </View>
           )}
         </View>
@@ -102,7 +102,7 @@ export default function PersonPage() {
       </View>
 
       <SectionHeader title={t.operations} />
-      {timeline.length === 0 ? <Empty icon="📒" title={t.emptyOpsTitle} text={t.emptyOpsText} /> : null}
+      {timeline.length === 0 ? <Empty title={t.emptyOpsTitle} text={t.emptyOpsText} /> : null}
       {timeline.map((row) => (
         <TimelineItem key={row.kind + row.id} row={row} onPress={() => router.push({ pathname: '/operation', params: { kind: row.kind, id: row.id } })} />
       ))}
@@ -113,7 +113,8 @@ export default function PersonPage() {
 function TimelineItem({ row, onPress }: { row: TimelineRow; onPress: () => void }) {
   const { t, lang } = useI18n();
   const dirColor = (d: Direction) => (d === 'PAYABLE' ? colors.danger : colors.success);
-  let icon: string;
+  /** Petite étiquette de catégorie au-dessus du titre (remplace les icônes). */
+  let kindLabel: string;
   let title: string;
   let amountColor = colors.text;
   let subtitle: string | null = null;
@@ -122,11 +123,11 @@ function TimelineItem({ row, onPress }: { row: TimelineRow; onPress: () => void 
   if (row.kind === 'I') {
     const type = row.sub as InstrumentType;
     if (type === 'CASH') {
-      icon = '💵';
+      kindLabel = t.payment;
       title = t.paymentTitle[row.direction];
       amountColor = colors.success;
     } else {
-      icon = '📄';
+      kindLabel = t.instrTypes[type];
       title = `${t.instrTypes[type]}${row.title ? ` n° ${row.title}` : ''}`;
       const pending = row.status === 'PENDING';
       footer = (
@@ -137,8 +138,7 @@ function TimelineItem({ row, onPress }: { row: TimelineRow; onPress: () => void 
       );
     }
   } else {
-    const loan = row.sub === 'CASH_LOAN' || row.sub === 'LOAN_GIVEN';
-    icon = row.kind === 'P' ? '👷' : loan ? '💰' : row.direction === 'PAYABLE' ? '🛒' : '🧺';
+    kindLabel = row.kind === 'P' ? t.work : t.txTypes[row.sub as TransactionType];
     title = row.kind === 'P' ? workTitle(t, row) : row.title || t.txTypes[row.sub as TransactionType];
     if (row.kind === 'P') subtitle = workDetail(t, row, lang);
     amountColor = dirColor(row.direction);
@@ -154,17 +154,15 @@ function TimelineItem({ row, onPress }: { row: TimelineRow; onPress: () => void 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { gap: 10 }, pressed && styles.pressed]}>
       <View style={styles.row}>
-        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontSize: 20 }}>{icon}</Text>
-        </View>
         <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ fontSize: font.xs, fontWeight: '600', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>{kindLabel}</Text>
           <Text style={{ fontSize: font.md, fontWeight: '700', color: colors.text }} numberOfLines={2}>
             {title}
           </Text>
           {subtitle ? <Text style={[styles.muted, { color: colors.textSoft }]}>{subtitle}</Text> : null}
           <Text style={styles.muted}>
             {formatDate(row.d)}
-            {row.photos ? `  ·  📎 ${row.photos}` : ''}
+            {row.photos ? `  ·  ${t.photoCount(row.photos)}` : ''}
           </Text>
         </View>
         <Text style={{ fontSize: font.md + 1, fontWeight: '800', color: amountColor }}>{formatMoney(row.amount, lang)}</Text>

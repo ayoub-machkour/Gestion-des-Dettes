@@ -25,6 +25,7 @@
     "expo-print": "~58.0.8",
     "expo-router": "~58.0.28",
     "expo-sharing": "~58.0.21",
+    "expo-splash-screen": "~58.0.12",
     "expo-sqlite": "~58.0.14",
     "expo-status-bar": "~58.0.4",
     "react": "19.3.0",

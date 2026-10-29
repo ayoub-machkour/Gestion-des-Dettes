@@ -40,12 +40,12 @@ export default function History() {
 
   return (
     <Screen>
-      <TextInput style={styles.input} value={search} onChangeText={setSearch} placeholder={`🔍  ${t.search}`} placeholderTextColor={colors.muted} />
+      <TextInput style={styles.input} value={search} onChangeText={setSearch} placeholder={t.search} placeholderTextColor={colors.muted} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 2 }}>
         <Chips options={FILTERS.map((f) => ({ value: f, label: t.historyFilters[f] }))} value={filter} onChange={(v) => v && setFilter(v)} />
       </ScrollView>
 
-      {rows.length === 0 ? <Empty icon="🕘" title={t.emptyHistory} /> : null}
+      {rows.length === 0 ? <Empty title={t.emptyHistory} /> : null}
       {[...days.entries()].map(([day, list]) => [
         <SectionHeader key={day} title={formatDate(day)} />,
         ...list.map((r) => {
@@ -74,7 +74,7 @@ export default function History() {
                 {pad(created.getHours())}:{pad(created.getMinutes())}
                 {r.contact_name ? `  ·  ${r.contact_name}` : ''}
                 {r.details && !/^[A-Z_\d]+$/.test(r.details) ? `  ·  ${r.details}` : ''}
-                {r.photos ? `  ·  📎 ${r.photos}` : ''}
+                {r.photos ? `  ·  ${t.photoCount(r.photos)}` : ''}
               </Text>
             </Card>
           );

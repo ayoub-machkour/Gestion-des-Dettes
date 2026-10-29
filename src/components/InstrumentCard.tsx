@@ -37,7 +37,7 @@ export function InstrumentCard({
       <View style={styles.row}>
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={{ fontSize: font.md, fontWeight: '700', color: colors.text }}>
-            📄 {t.instrTypes[inst.instrument_type]}
+            {t.instrTypes[inst.instrument_type]}
             {inst.reference_number ? ` n° ${inst.reference_number}` : ''}
           </Text>
           {showContact ? <Text style={styles.muted}>{inst.contact_name}</Text> : null}
@@ -46,7 +46,7 @@ export function InstrumentCard({
       </View>
       <View style={[styles.row, { gap: 6, flexWrap: 'wrap' }]}>
         <Pill text={t.instrDirection[inst.direction]} tone={inst.direction === 'PAYABLE' ? 'danger' : 'success'} />
-        <Pill text={`📅 ${formatDate(inst.maturity_due_date)}`} />
+        <Pill text={`${t.dueShort} : ${formatDate(inst.maturity_due_date)}`} />
         {pending ? <Pill text={t.inDays(days)} tone={urgent ? 'danger' : 'warning'} /> : <Pill text={t.instrStatus[inst.status]} tone={inst.status === 'DEBITED_PAID' ? 'success' : 'neutral'} />}
       </View>
       {pending && (onMarkPaid || onCancel) ? (

@@ -33,8 +33,8 @@ export function LateBadge({ due, rest }: { due: string | null; rest: number }) {
   const { t } = useI18n();
   if (rest <= 0 || !due) return null;
   const d = daysUntil(due);
-  if (d < 0) return <Pill text={`⏱ ${t.lateBy(-d)}`} tone="danger" />;
-  if (d <= 7) return <Pill text={`⏳ ${t.dueIn(d)}`} tone="warning" />;
+  if (d < 0) return <Pill text={t.lateBy(-d)} tone="danger" />;
+  if (d <= 7) return <Pill text={t.dueIn(d)} tone="warning" />;
   return null;
 }
 

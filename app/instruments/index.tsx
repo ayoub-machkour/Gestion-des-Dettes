@@ -39,7 +39,7 @@ export default function InstrumentsCalendar() {
         value={filter}
         onChange={setFilter}
       />
-      {items.length === 0 ? <Empty icon="📅" title={t.noInstrumentsTitle} text={t.noInstrumentsText} /> : null}
+      {items.length === 0 ? <Empty title={t.noInstrumentsTitle} text={t.noInstrumentsText} /> : null}
       {[...groups.entries()].map(([month, list]) => {
         const [y, m] = month.split('-').map(Number);
         return [

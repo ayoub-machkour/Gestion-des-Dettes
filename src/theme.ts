@@ -1,43 +1,45 @@
-// Design épuré et premium : fond doux, cartes blanches, vert forêt profond, fort contraste.
+// Couleurs du logo (bleu marine + bleu), fond clair, bordures fines plutôt que grosses ombres.
 export const colors = {
-  bg: '#F4F5F1',
+  bg: '#F5F6F8',
   surface: '#FFFFFF',
-  surfaceAlt: '#F8F9F6',
-  primary: '#1E4D3A',
-  primaryDark: '#143528',
-  primarySoft: '#E6EFE9',
-  text: '#16201B',
-  textSoft: '#4A5550',
-  muted: '#868F89',
-  border: '#E3E6E1',
-  danger: '#C8372B',
-  dangerSoft: '#FCEBE9',
-  success: '#12805C',
-  successSoft: '#E4F4EC',
-  warning: '#B86E00',
-  warningSoft: '#FFF3DF',
+  surfaceAlt: '#F1F3F6',
+  primary: '#1F2E46',
+  primaryDark: '#152036',
+  primarySoft: '#E8EDF5',
+  accent: '#2B7FE0',
+  text: '#1A2233',
+  textSoft: '#4B5565',
+  muted: '#8A93A3',
+  border: '#E2E5EA',
+  danger: '#C2362B',
+  dangerSoft: '#FBECEA',
+  success: '#1E7A4F',
+  successSoft: '#E6F3EC',
+  warning: '#A86400',
+  warningSoft: '#FDF1DE',
   white: '#FFFFFF',
-  overlay: 'rgba(10,15,12,0.92)',
+  overlay: 'rgba(12,16,24,0.94)',
 };
 
-export const radius = { sm: 10, md: 14, lg: 20, xl: 28, round: 999 };
+export const radius = { sm: 8, md: 12, lg: 14, xl: 20, round: 999 };
 
-export const font = { xs: 13, sm: 15, md: 17, lg: 20, xl: 26, xxl: 34 };
+export const font = { xs: 13, sm: 15, md: 17, lg: 20, xl: 26, xxl: 32 };
 
+/** Ombre très légère : les cartes se distinguent surtout par leur bordure. */
 export const shadow = {
-  shadowColor: '#1E2A22',
-  shadowOpacity: 0.07,
-  shadowRadius: 14,
-  shadowOffset: { width: 0, height: 4 },
-  elevation: 2,
+  shadowColor: '#1A2233',
+  shadowOpacity: 0.04,
+  shadowRadius: 6,
+  shadowOffset: { width: 0, height: 1 },
+  elevation: 1,
 };
 
 /** Couleurs d'avatar (fond, texte), choisies selon le nom. */
 export const avatarPalette: [string, string][] = [
-  ['#E6EFE9', '#1E4D3A'],
-  ['#FBEFDF', '#93560F'],
-  ['#E7EDF8', '#2C4C82'],
-  ['#F5E7EE', '#86305B'],
-  ['#ECEFDF', '#57621A'],
-  ['#E4F1F2', '#1C626C'],
+  ['#E8EDF5', '#1F2E46'],
+  ['#E5F0FC', '#1F5FA8'],
+  ['#EEF0F3', '#3D4757'],
+  ['#E6F3EC', '#1E6B47'],
+  ['#FDF1DE', '#8A5300'],
+  ['#F3E9F2', '#7A3570'],
 ];

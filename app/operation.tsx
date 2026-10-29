@@ -53,7 +53,7 @@ export default function Operation() {
   if (data.kind === 'missing') {
     return (
       <Screen>
-        <Empty icon="🗑" title={t.deleted} />
+        <Empty title={t.deleted} />
       </Screen>
     );
   }
@@ -98,7 +98,6 @@ export default function Operation() {
       return (
         <Screen>
           <Card style={{ alignItems: 'center', paddingVertical: 24 }}>
-            <Text style={{ fontSize: 40 }}>💵</Text>
             <Text style={{ fontSize: font.md, fontWeight: '600', color: c.fg }}>{t.paymentTitle[inst.direction]}</Text>
             <Text style={{ fontSize: font.xxl, fontWeight: '800', color: colors.text }}>{formatMoney(inst.amount, lang)}</Text>
             <Text style={styles.muted}>
@@ -140,8 +139,8 @@ export default function Operation() {
         </View>
         <Text style={{ fontSize: font.lg, fontWeight: '800', color: colors.text }}>{data.contactName}</Text>
         <Text style={styles.muted}>
-          📅 {formatDate(date)}
-          {due ? `   ·   ⏳ ${formatDate(due)}` : ''}
+          {t.date} : {formatDate(date)}
+          {due ? `   ·   ${t.dueShort} : ${formatDate(due)}` : ''}
         </Text>
 
         {data.kind === 'T' && loan ? (

@@ -2,7 +2,7 @@ import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { ReactNode, useState } from 'react';
 import { Pressable, ScrollView, StyleProp, StyleSheet, Switch, Text, TextInput, TextInputProps, View, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { avatarPalette, colors, font, radius, shadow } from '../theme';
+import { avatarPalette, colors, font, radius } from '../theme';
 import { formatDate, parseISODate, toISODate } from '../utils/dates';
 
 /** Page défilante ; `footer` reste collé en bas (bouton principal). */
@@ -73,10 +73,15 @@ export function Button({
   );
 }
 
-export function IconButton({ icon, onPress, badge }: { icon: string; onPress: () => void; badge?: number }) {
+/** Bouton menu (trois traits), avec un compteur optionnel. */
+export function MenuButton({ onPress, badge }: { onPress: () => void; badge?: number }) {
   return (
     <Pressable onPress={onPress} hitSlop={8} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-      <Text style={{ fontSize: 22 }}>{icon}</Text>
+      <View style={{ gap: 4 }}>
+        {[0, 1, 2].map((i) => (
+          <View key={i} style={{ width: 20, height: 2, borderRadius: 1, backgroundColor: colors.text }} />
+        ))}
+      </View>
       {badge ? (
         <View style={styles.badgeDot}>
           <Text style={styles.badgeDotText}>{badge}</Text>
@@ -145,7 +150,7 @@ export function Segmented<T extends string>({
           <Pressable
             key={o.value}
             onPress={() => onChange(o.value)}
-            style={[styles.segment, active && { backgroundColor: o.color ?? colors.primary, ...shadow }]}
+            style={[styles.segment, active && { backgroundColor: o.color ?? colors.primary }]}
           >
             <Text style={[styles.segmentText, active && { color: colors.white }]} numberOfLines={1}>
               {o.label}
@@ -213,7 +218,7 @@ export function DateField({
       <Label>{label}</Label>
       <View style={styles.row}>
         <Pressable onPress={open} style={({ pressed }) => [styles.input, styles.dateBox, pressed && styles.pressed]}>
-          <Text style={[styles.dateText, !value && { color: colors.muted }]}>📅  {value ? formatDate(value) : clearLabel}</Text>
+          <Text style={[styles.dateText, !value && { color: colors.muted }]}>{value ? formatDate(value) : clearLabel}</Text>
         </Pressable>
         {clearLabel && value ? (
           <Pressable onPress={() => onChange(null)} style={({ pressed }) => [styles.input, styles.clearBtn, pressed && styles.pressed]}>
@@ -273,10 +278,9 @@ export function Pill({ text, tone = 'neutral' }: { text: string; tone?: Tone }) 
   );
 }
 
-export function Empty({ icon, title, text }: { icon: string; title: string; text?: string }) {
+export function Empty({ title, text }: { title: string; text?: string }) {
   return (
-    <View style={{ alignItems: 'center', paddingVertical: 40, gap: 8 }}>
-      <Text style={{ fontSize: 48 }}>{icon}</Text>
+    <View style={{ alignItems: 'center', paddingVertical: 40, paddingHorizontal: 16, gap: 6 }}>
       <Text style={[styles.body, { fontWeight: '700', textAlign: 'center' }]}>{title}</Text>
       {text ? <Text style={[styles.muted, { textAlign: 'center' }]}>{text}</Text> : null}
     </View>
@@ -298,7 +302,7 @@ export const styles = StyleSheet.create({
     borderTopColor: colors.border,
     gap: 10,
   },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 18, gap: 8, ...shadow },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 8 },
   pressed: { opacity: 0.75, transform: [{ scale: 0.99 }] },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   button: { borderRadius: radius.md, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 18 },
@@ -306,11 +310,12 @@ export const styles = StyleSheet.create({
   iconButton: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: radius.md,
     backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadow,
   },
   badgeDot: {
     position: 'absolute',

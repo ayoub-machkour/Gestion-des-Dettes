@@ -86,7 +86,7 @@ export default function PersonForm() {
         <Chips
           options={[
             ...TYPES.map((v) => ({ value: v as string, label: t.contactTypes[v] })),
-            ...customTypes.map((c) => ({ value: CUSTOM + c, label: `🏷️ ${c}` })),
+            ...customTypes.map((c) => ({ value: CUSTOM + c, label: c })),
           ]}
           value={type}
           onChange={(v) => v && setType(v)}

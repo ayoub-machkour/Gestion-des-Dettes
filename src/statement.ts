@@ -43,7 +43,7 @@ function buildHtml({ contact, ledger, payments }: StatementData, t: Dict, lang: 
         ${rows
           .map((r) => {
             const rest = r.total - r.paid;
-            const late = rest > 0 && r.due && daysUntil(r.due) < 0 ? ` <span class="late">⏱ ${t.lateBy(-daysUntil(r.due))}</span>` : '';
+            const late = rest > 0 && r.due && daysUntil(r.due) < 0 ? ` <span class="late">${t.lateBy(-daysUntil(r.due))}</span>` : '';
             return `<tr><td>${formatDate(r.d)}</td><td>${esc(rowLabel(t, r, lang))}${late}</td><td>${money(r.total)}</td><td>${money(r.paid)}</td><td><b>${rest > 0 ? money(rest) : '✓'}</b></td></tr>`;
           })
           .join('')}
@@ -105,7 +105,7 @@ export async function sendStatementWhatsApp({ contact, ledger }: StatementData, 
   const money = (c: number) => formatMoney(c, lang);
   const lines = [`*${t.statementTitle}* — ${contact.name}`, formatDate(today()), ''];
   for (const r of ledger.filter((x) => x.total > x.paid)) {
-    const late = r.due && daysUntil(r.due) < 0 ? ` ⏱ ${t.lateBy(-daysUntil(r.due))}` : '';
+    const late = r.due && daysUntil(r.due) < 0 ? ` (${t.lateBy(-daysUntil(r.due))})` : '';
     lines.push(`• ${formatDate(r.d)} ${rowLabel(t, r, lang)} : ${money(r.total - r.paid)}${late}`);
   }
   lines.push('');
