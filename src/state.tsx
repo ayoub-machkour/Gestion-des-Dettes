@@ -1,8 +1,9 @@
 import { useSQLiteContext } from 'expo-sqlite';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
-import { referencedFileNames } from './db/repo';
+import { AppState as RNAppState } from 'react-native';
+import { referencedFileNames, settleDueInstruments } from './db/repo';
 import { useI18n } from './i18n';
-import { syncReminders } from './notifications';
+import { setupNotificationsOnStart, syncReminders } from './notifications';
 import { cleanupOrphanPhotos } from './photos';
 
 interface AppState {
@@ -19,10 +20,23 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const { lang } = useI18n();
   const [version, setVersion] = useState(0);
 
+  // Les chèques / traites dont la date de débit est passée deviennent payés (au démarrage et au retour dans l'app).
+  const settle = useCallback(async () => {
+    if (await settleDueInstruments(db)) setVersion((v) => v + 1);
+  }, [db]);
+
   useEffect(() => {
-    syncReminders(db, lang).catch(() => {});
+    settle()
+      .catch(() => {})
+      .then(() => setupNotificationsOnStart(db, lang))
+      .then(() => syncReminders(db, lang))
+      .catch(() => {});
     referencedFileNames(db).then(cleanupOrphanPhotos).catch(() => {});
-  }, [db, lang]);
+    const sub = RNAppState.addEventListener('change', (s) => {
+      if (s === 'active') settle().catch(() => {});
+    });
+    return () => sub.remove();
+  }, [db, lang, settle]);
 
   const refresh = useCallback(
     (askNotifPermission = false) => {

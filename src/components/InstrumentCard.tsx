@@ -7,18 +7,19 @@ import { formatMoney } from '../utils/money';
 import { DIRECTION_COLORS } from './domain';
 import { Button, Card, Pill, styles } from './ui';
 
-/** Carte d'un chèque / d'une traite, avec les actions « payé » et « annuler » tant qu'il est en attente. */
+/**
+ * Carte d'un chèque / d'une traite. Il devient payé tout seul le lendemain de sa date de débit
+ * (voir settleDueInstruments) ; seule l'annulation (chèque rejeté, rendu) reste manuelle.
+ */
 export function InstrumentCard({
   inst,
   showContact = true,
   onPress,
-  onMarkPaid,
   onCancel,
 }: {
   inst: InstrumentWithContact;
   showContact?: boolean;
   onPress?: () => void;
-  onMarkPaid?: (id: string) => void;
   onCancel?: (id: string) => void;
 }) {
   const { t, lang } = useI18n();
@@ -49,11 +50,11 @@ export function InstrumentCard({
         <Pill text={`${t.dueShort} : ${formatDate(inst.maturity_due_date)}`} />
         {pending ? <Pill text={t.inDays(days)} tone={urgent ? 'danger' : 'warning'} /> : <Pill text={t.instrStatus[inst.status]} tone={inst.status === 'DEBITED_PAID' ? 'success' : 'neutral'} />}
       </View>
-      {pending && (onMarkPaid || onCancel) ? (
-        <View style={[styles.row, { marginTop: 4 }]}>
-          {onMarkPaid ? <Button label={t.markPaid} size="md" variant="success" style={{ flex: 2 }} onPress={() => confirm(t.confirmMarkPaid, () => onMarkPaid(inst.id))} /> : null}
-          {onCancel ? <Button label={t.cancelInstrument} size="md" variant="secondary" style={{ flex: 1 }} onPress={() => confirm(t.confirmCancel, () => onCancel(inst.id))} /> : null}
-        </View>
+      {pending && onCancel ? (
+        <>
+          <Text style={styles.muted}>{t.autoDebitNote}</Text>
+          <Button label={t.cancelInstrument} size="md" variant="ghost" onPress={() => confirm(t.confirmCancel, () => onCancel(inst.id))} />
+        </>
       ) : null}
     </Card>
   );

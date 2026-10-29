@@ -128,8 +128,9 @@ const chk = await repo.saveInstrument(db, {
   amount: 200000, issueDate: '2026-04-05', maturityDate: '2026-05-01', reference: '123', reminderDays: 3,
 });
 eq((await contact(buyer))!.receivable, 200000, 'pending check does not change balance');
-await repo.setInstrumentStatus(db, chk, 'DEBITED_PAID');
-eq([(await tx(s1))!.status, (await contact(buyer))!.receivable], ['PAID', 0], 'paid check settles the sale');
+eq(await repo.settleDueInstruments(db, '2026-05-01'), 0, 'check not debited before the end of its due date');
+eq(await repo.settleDueInstruments(db, '2026-05-02'), 1, 'check debited automatically the day after its due date');
+eq([(await tx(s1))!.status, (await contact(buyer))!.receivable], ['PAID', 0], 'debited check settles the sale');
 
 // Paie : types de travail, période, samedi / dimanche, absences, unités
 const w1 = await repo.saveContact(db, { name: 'Ali', type: 'EMPLOYEE' });

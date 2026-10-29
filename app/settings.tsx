@@ -4,7 +4,7 @@ import { Alert, Text } from 'react-native';
 import { Button, Card, Screen, SectionHeader, Segmented, styles } from '../src/components/ui';
 import { useI18n } from '../src/i18n';
 import type { Lang } from '../src/i18n/dicts';
-import { ensureNotificationPermission, hasNotificationPermission, syncReminders } from '../src/notifications';
+import { ensureNotificationPermission, hasNotificationPermission, sendWelcomeNotification, syncReminders } from '../src/notifications';
 import { colors } from '../src/theme';
 
 export default function Settings() {
@@ -38,9 +38,12 @@ export default function Settings() {
 
       <SectionHeader title={t.notifications} />
       {notifOk ? (
-        <Card>
-          <Text style={[styles.body, { color: colors.success, fontWeight: '700' }]}>{t.notifEnabled}</Text>
-        </Card>
+        <>
+          <Card>
+            <Text style={[styles.body, { color: colors.success, fontWeight: '700' }]}>{t.notifEnabled}</Text>
+          </Card>
+          <Button label={t.testNotification} variant="secondary" onPress={() => sendWelcomeNotification(lang)} />
+        </>
       ) : (
         <>
           {notifOk === false ? <Text style={styles.muted}>{t.notifDenied}</Text> : null}

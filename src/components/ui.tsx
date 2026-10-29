@@ -91,6 +91,57 @@ export function MenuButton({ onPress, badge }: { onPress: () => void; badge?: nu
   );
 }
 
+/** Bouton calendrier (dessiné, sans police d'icônes) avec le nombre d'échéances proches. */
+export function CalendarButton({ onPress, badge }: { onPress: () => void; badge?: number }) {
+  const ink = badge ? colors.danger : colors.primary;
+  return (
+    <Pressable onPress={onPress} hitSlop={8} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+      <View style={{ width: 24, height: 22, borderRadius: 4, borderWidth: 2, borderColor: ink, overflow: 'hidden', marginTop: 3 }}>
+        <View style={{ height: 5, backgroundColor: ink }} />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, padding: 2, justifyContent: 'center' }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <View key={i} style={{ width: 4, height: 3, borderRadius: 1, backgroundColor: ink }} />
+          ))}
+        </View>
+      </View>
+      {[-6, 6].map((x) => (
+        <View key={x} style={{ position: 'absolute', top: 10, width: 2.5, height: 6, borderRadius: 1, backgroundColor: ink, transform: [{ translateX: x }] }} />
+      ))}
+      {badge ? (
+        <View style={styles.badgeDot}>
+          <Text style={styles.badgeDotText}>{badge}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+/** Compteur − / + (pas de 1 par défaut, 0.5 pour les demi-journées). */
+export function Stepper({ value, min = 0, max, step = 1, onChange }: { value: number; min?: number; max: number; step?: number; onChange: (n: number) => void }) {
+  const button = (label: string, next: number, disabled: boolean) => (
+    <Pressable
+      onPress={() => !disabled && onChange(next)}
+      style={{
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: disabled ? colors.surfaceAlt : colors.primarySoft,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Text style={{ fontSize: 22, fontWeight: '800', color: disabled ? colors.muted : colors.primary }}>{label}</Text>
+    </Pressable>
+  );
+  return (
+    <View style={[styles.row, { gap: 10 }]}>
+      {button('−', Math.max(min, value - step), value <= min)}
+      <Text style={{ fontSize: font.lg, fontWeight: '800', color: colors.text, minWidth: 36, textAlign: 'center' }}>{value}</Text>
+      {button('+', Math.min(max, value + step), value >= max)}
+    </View>
+  );
+}
+
 export function Label({ children }: { children: ReactNode }) {
   return <Text style={styles.label}>{children}</Text>;
 }

@@ -112,7 +112,6 @@ export default function Operation() {
       <Screen>
         <InstrumentCard
           inst={inst}
-          onMarkPaid={(iid) => setInstrumentStatus(db, iid, 'DEBITED_PAID').then(() => refresh())}
           onCancel={(iid) => setInstrumentStatus(db, iid, 'CANCELLED').then(() => refresh())}
         />
         {bottom}

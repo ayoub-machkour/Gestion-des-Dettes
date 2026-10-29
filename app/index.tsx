@@ -3,7 +3,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Avatar, Button, Empty, MenuButton, Pill, styles } from '../src/components/ui';
+import { Avatar, Button, CalendarButton, Empty, MenuButton, Pill, styles } from '../src/components/ui';
 import { countDueInstruments, listContacts } from '../src/db/repo';
 import type { ContactWithBalance } from '../src/db/types';
 import { useI18n } from '../src/i18n';
@@ -47,7 +47,10 @@ export default function Home() {
                 <Text style={styles.title}>{t.people}</Text>
                 {people?.length ? <Text style={styles.muted}>{t.peopleCount(people.length)}</Text> : null}
               </View>
-              <MenuButton badge={dueCount} onPress={() => router.push('/menu')} />
+              <View style={[styles.row, { gap: 10 }]}>
+                <CalendarButton badge={dueCount} onPress={() => router.push('/instruments')} />
+                <MenuButton onPress={() => router.push('/menu')} />
+              </View>
             </View>
             {(people?.length ?? 0) > 4 ? (
               <TextInput style={styles.input} value={search} onChangeText={setSearch} placeholder={t.search} placeholderTextColor={colors.muted} />

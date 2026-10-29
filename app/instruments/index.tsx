@@ -8,7 +8,7 @@ import type { InstrumentWithContact } from '../../src/db/types';
 import { useI18n } from '../../src/i18n';
 import { useAppState } from '../../src/state';
 
-/** Échéancier : chèques, traites et billets regroupés par mois d'échéance. */
+/** Échéancier : chèques et traites regroupés par mois de débit. */
 export default function InstrumentsCalendar() {
   const db = useSQLiteContext();
   const router = useRouter();
@@ -49,7 +49,6 @@ export default function InstrumentsCalendar() {
               key={i.id}
               inst={i}
               onPress={() => router.push({ pathname: '/operation', params: { kind: 'I', id: i.id } })}
-              onMarkPaid={(id) => setInstrumentStatus(db, id, 'DEBITED_PAID').then(() => refresh())}
               onCancel={(id) => setInstrumentStatus(db, id, 'CANCELLED').then(() => refresh())}
             />
           )),

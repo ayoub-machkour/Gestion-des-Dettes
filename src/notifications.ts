@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { listInstruments } from './db/repo';
+import { getSetting, listInstruments, setSetting } from './db/repo';
 import { dicts, type Lang } from './i18n/dicts';
 import { addDays, atHour, formatDate } from './utils/dates';
 import { formatMoney } from './utils/money';
@@ -37,9 +37,27 @@ export async function ensureNotificationPermission(): Promise<boolean> {
   return (await Notifications.requestPermissionsAsync()).granted;
 }
 
+/** Notification immédiate « Bonjour, merci d'avoir installé… » : prouve que les notifications arrivent. */
+export async function sendWelcomeNotification(lang: Lang) {
+  const t = dicts[lang];
+  await Notifications.scheduleNotificationAsync({
+    content: { title: t.welcomeTitle, body: t.welcomeBody },
+    trigger: null,
+  });
+}
+
+/** Au premier lancement : demande la permission tout de suite, puis envoie la notification de bienvenue (une seule fois). */
+export async function setupNotificationsOnStart(db: SQLiteDatabase, lang: Lang) {
+  await initNotifications();
+  if (!(await ensureNotificationPermission())) return;
+  if (await getSetting(db, 'welcome_sent')) return;
+  await sendWelcomeNotification(lang);
+  await setSetting(db, 'welcome_sent', '1');
+}
+
 /**
  * Reconstruit tous les rappels à partir de la base : N jours avant l'échéance (9h) et le jour même (8h).
- * Appelé après chaque modification, annulation (undo) et au démarrage : toujours cohérent.
+ * Appelé après chaque modification et au démarrage : toujours cohérent.
  */
 export async function syncReminders(db: SQLiteDatabase, lang: Lang, askPermission = false) {
   const granted = askPermission ? await ensureNotificationPermission() : await hasNotificationPermission();

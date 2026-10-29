@@ -2,7 +2,7 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-rou
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { Avatar, Button, Card, Chips, DateField, ErrorText, Field, Label, Screen, SectionHeader, styles, SwitchRow } from '../../src/components/ui';
+import { Avatar, Button, Card, Chips, DateField, ErrorText, Field, Label, Screen, SectionHeader, Stepper, styles, SwitchRow } from '../../src/components/ui';
 import { createWorkEntries, getPayroll, listContacts, listWorkKinds, saveContact, updateWorkEntry, type WorkInput } from '../../src/db/repo';
 import type { ContactWithBalance, PricingMode, WorkKind } from '../../src/db/types';
 import { useI18n } from '../../src/i18n';
@@ -270,7 +270,7 @@ export default function WorkEntryForm() {
                       <Text style={[styles.muted, { flex: 1 }]}>
                         {t.absences} → {t.daysCount(quantityFor(id))}
                       </Text>
-                      <Stepper value={parseNumber(perWorker[id] ?? '') ?? 0} max={periodDays} onChange={(n) => setPerWorker((p) => ({ ...p, [id]: String(n) }))} />
+                      <Stepper value={parseNumber(perWorker[id] ?? '') ?? 0} max={periodDays} step={0.5} onChange={(n) => setPerWorker((p) => ({ ...p, [id]: String(n) }))} />
                     </View>
                   ) : mode === 'UNIT' ? (
                     <View style={styles.row}>
@@ -298,31 +298,5 @@ export default function WorkEntryForm() {
         </>
       ) : null}
     </Screen>
-  );
-}
-
-/** Compteur − / + par demi-journée. */
-function Stepper({ value, max, onChange }: { value: number; max: number; onChange: (n: number) => void }) {
-  const button = (label: string, next: number, disabled: boolean) => (
-    <Pressable
-      onPress={() => !disabled && onChange(next)}
-      style={{
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: disabled ? colors.surfaceAlt : colors.primarySoft,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Text style={{ fontSize: 22, fontWeight: '800', color: disabled ? colors.muted : colors.primary }}>{label}</Text>
-    </Pressable>
-  );
-  return (
-    <View style={[styles.row, { gap: 10 }]}>
-      {button('−', Math.max(0, value - 0.5), value <= 0)}
-      <Text style={{ fontSize: font.lg, fontWeight: '800', color: colors.text, minWidth: 36, textAlign: 'center' }}>{value}</Text>
-      {button('+', Math.min(max, value + 0.5), value >= max)}
-    </View>
   );
 }

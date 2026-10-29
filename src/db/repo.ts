@@ -677,6 +677,19 @@ export async function setInstrumentStatus(db: SQLiteDatabase, id: string, status
   );
 }
 
+/**
+ * Un chèque / une traite est débité(e) à sa date : dès le lendemain, il passe automatiquement en payé.
+ * Appelé au démarrage et après chaque modification ; renvoie le nombre d'effets réglés.
+ */
+export async function settleDueInstruments(db: SQLiteDatabase, asOf = today()): Promise<number> {
+  const due = await db.getAllAsync<{ id: string }>(
+    "SELECT id FROM instruments WHERE status = 'PENDING' AND instrument_type != 'CASH' AND maturity_due_date < ? ORDER BY maturity_due_date",
+    asOf,
+  );
+  for (const { id } of due) await setInstrumentStatus(db, id, 'DEBITED_PAID');
+  return due.length;
+}
+
 export async function listInstruments(
   db: SQLiteDatabase,
   opts: { status?: InstrumentStatus; contactId?: string; excludeCash?: boolean } = {},

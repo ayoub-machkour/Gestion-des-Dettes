@@ -7,7 +7,6 @@ import { View } from 'react-native';
 import { AnimatedSplash } from '../src/components/AnimatedSplash';
 import { migrateDb } from '../src/db/migrations';
 import { I18nProvider, useI18n } from '../src/i18n';
-import { initNotifications } from '../src/notifications';
 import { AppStateProvider } from '../src/state';
 import { colors, font } from '../src/theme';
 
@@ -33,9 +32,10 @@ function AppStack() {
   const router = useRouter();
 
   useEffect(() => {
-    initNotifications();
     // Toucher une notification d'échéance ouvre l'échéancier.
-    const sub = Notifications.addNotificationResponseReceivedListener(() => router.push('/instruments'));
+    const sub = Notifications.addNotificationResponseReceivedListener((r) => {
+      if (r.notification.request.content.data?.instrumentId) router.push('/instruments');
+    });
     return () => sub.remove();
   }, [router]);
 
