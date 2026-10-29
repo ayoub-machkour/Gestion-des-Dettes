@@ -3,7 +3,7 @@
 $root = $PSScriptRoot
 $envDir = Join-Path $root '.env'
 $env:AGRICOMPTE_ENV = $envDir
-$env:PATH = "$(Join-Path $envDir 'node');$(Join-Path $envDir 'npm-global');$env:PATH"
+$env:PATH = "$(Join-Path $envDir 'node');$(Join-Path $envDir 'npm-global');$(Join-Path $envDir 'platform-tools');$env:PATH"
 $env:npm_config_cache = Join-Path $envDir 'npm-cache'
 $env:npm_config_prefix = Join-Path $envDir 'npm-global'
 $env:EXPO_NO_TELEMETRY = '1'
