@@ -2,11 +2,14 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-rou
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { DIRECTION_COLORS, LateBadge } from '../../src/components/domain';
 import { InstrumentCard } from '../../src/components/InstrumentCard';
 import { BigButton, Btn, Card, Empty, Screen, SectionTitle, styles } from '../../src/components/ui';
-import { cancelInstrument, deleteContact, deleteLedgerItem, getContact, getLedger, listInstruments, markInstrumentPaid } from '../../src/db/repo';
-import type { ContactWithBalance, InstrumentWithContact, LedgerRow, TransactionType, WorkType } from '../../src/db/types';
+import { deleteContact, getContact, getLedger, listInstruments, setInstrumentStatus } from '../../src/db/repo';
+import type { ContactWithBalance, Direction, InstrumentWithContact, LedgerRow } from '../../src/db/types';
 import { useI18n } from '../../src/i18n';
+import { useAppState } from '../../src/state';
+import { rowLabel, sendStatementWhatsApp, shareStatementPdf } from '../../src/statement';
 import { colors, font } from '../../src/theme';
 import { formatDate } from '../../src/utils/dates';
 import { formatMoney } from '../../src/utils/money';
@@ -16,110 +19,156 @@ export default function ContactSheet() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t, lang } = useI18n();
+  const { version, done } = useAppState();
   const [contact, setContact] = useState<ContactWithBalance | null>(null);
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [instruments, setInstruments] = useState<InstrumentWithContact[]>([]);
 
-  const load = useCallback(() => {
-    getContact(db, id).then(setContact);
-    getLedger(db, id).then(setLedger);
-    listInstruments(db, { contactId: id }).then(setInstruments);
-  }, [db, id]);
-
-  useFocusEffect(load);
+  useFocusEffect(
+    useCallback(() => {
+      getContact(db, id).then(setContact);
+      getLedger(db, id).then(setLedger);
+      listInstruments(db, { contactId: id }).then((list) => setInstruments(list.reverse()));
+    }, [db, id, version]),
+  );
 
   if (!contact) return null;
 
   const money = (c: number) => formatMoney(c, lang).replace(/ (DH|درهم)$/, '');
-  const rowLabel = (r: LedgerRow) =>
-    r.kind === 'T'
-      ? r.label || t.txTypes[r.sub as TransactionType]
-      : t.wageLabel(t.workTypes[r.sub as WorkType], r.days ?? 0, money(r.rate ?? 0));
-  const totals = ledger.reduce((acc, r) => ({ total: acc.total + r.total, paid: acc.paid + r.paid }), { total: 0, paid: 0 });
+  const statement = { contact, ledger, payments: instruments };
 
-  const askDeleteRow = (r: LedgerRow) =>
-    Alert.alert(t.deleteConfirm, rowLabel(r), [
+  const askStatement = () =>
+    Alert.alert(t.statementTitle, contact.name, [
       { text: t.cancel, style: 'cancel' },
-      { text: t.delete, style: 'destructive', onPress: () => deleteLedgerItem(db, r.kind, r.id).then(load) },
+      { text: t.statementText, onPress: () => sendStatementWhatsApp(statement, t, lang) },
+      { text: t.statementPdf, onPress: () => shareStatementPdf(statement, t, lang) },
     ]);
 
   const askDeleteContact = () =>
     Alert.alert(t.deleteContactConfirm, contact.name, [
       { text: t.cancel, style: 'cancel' },
-      { text: t.delete, style: 'destructive', onPress: () => deleteContact(db, contact.id).then(() => router.back()) },
+      {
+        text: t.delete,
+        style: 'destructive',
+        onPress: async () => {
+          await deleteContact(db, contact.id);
+          done(t.deleted);
+          router.back();
+        },
+      },
     ]);
+
+  const balanceLine = (direction: Direction, amount: number) => {
+    const c = DIRECTION_COLORS[direction];
+    const label = direction === 'PAYABLE' ? t.iOweHim : t.heOwesMe;
+    return (
+      <View style={[styles.row, { backgroundColor: c.bg, borderRadius: 10, padding: 10 }]}>
+        <Text style={{ flex: 1, fontSize: font.md, fontWeight: '800', color: c.fg }}>
+          {c.dot} {amount < 0 ? t.advance : label}
+        </Text>
+        <Text style={{ fontSize: font.xl, fontWeight: '900', color: c.fg }}>{formatMoney(Math.abs(amount), lang)}</Text>
+      </View>
+    );
+  };
+
+  const table = (direction: Direction) => {
+    const rows = ledger.filter((r) => r.direction === direction);
+    if (!rows.length) return null;
+    const totals = rows.reduce((acc, r) => ({ total: acc.total + r.total, paid: acc.paid + r.paid }), { total: 0, paid: 0 });
+    const c = DIRECTION_COLORS[direction];
+    return (
+      <>
+        <SectionTitle>
+          {c.dot} {direction === 'PAYABLE' ? t.iOweHim : t.heOwesMe}
+        </SectionTitle>
+        <View style={tbl.wrap}>
+          <View style={[tbl.row, tbl.head]}>
+            <Text style={[tbl.cell, tbl.date, tbl.headText]}>{t.colDate}</Text>
+            <Text style={[tbl.cell, tbl.desc, tbl.headText]}>{t.colDesc}</Text>
+            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{t.colAmount}</Text>
+            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{t.colPaid}</Text>
+            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{t.colRest}</Text>
+          </View>
+          {rows.map((r) => {
+            const rest = r.total - r.paid;
+            return (
+              <Pressable
+                key={r.kind + r.id}
+                onPress={() => router.push({ pathname: '/operation', params: { kind: r.kind, id: r.id } })}
+                style={({ pressed }) => [tbl.row, pressed && { backgroundColor: colors.oliveLight }]}
+              >
+                <Text style={[tbl.cell, tbl.date]}>{formatDate(r.d).slice(0, 5)}</Text>
+                <View style={[tbl.desc, { paddingVertical: 6, gap: 3 }]}>
+                  <Text style={tbl.cell} numberOfLines={2}>
+                    {rowLabel(t, r, lang)}
+                    {r.photos ? ' 📷' : ''}
+                  </Text>
+                  <LateBadge due={r.due} date={r.d} rest={rest} compact />
+                </View>
+                <Text style={[tbl.cell, tbl.num]}>{money(r.total)}</Text>
+                <Text style={[tbl.cell, tbl.num, { color: colors.success }]}>{money(r.paid)}</Text>
+                <Text style={[tbl.cell, tbl.num, { color: rest > 0 ? c.fg : colors.success, fontWeight: '800' }]}>{rest > 0 ? money(rest) : '✓'}</Text>
+              </Pressable>
+            );
+          })}
+          <View style={[tbl.row, tbl.head]}>
+            <Text style={[tbl.cell, tbl.date]} />
+            <Text style={[tbl.cell, tbl.desc, tbl.headText]}>{t.total}</Text>
+            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{money(totals.total)}</Text>
+            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{money(totals.paid)}</Text>
+            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{money(totals.total - totals.paid)}</Text>
+          </View>
+        </View>
+      </>
+    );
+  };
 
   return (
     <Screen>
       <Stack.Screen options={{ title: contact.name }} />
 
-      <Card style={{ borderColor: contact.balance > 0 ? colors.danger : colors.success, borderWidth: 2 }}>
+      <Card>
         <Text style={styles.muted}>
           {t.contactTypes[contact.type]}
           {contact.phone ? ` · ${contact.phone}` : ''}
         </Text>
-        <Text style={{ fontSize: font.md, fontWeight: '700', color: colors.muted }}>{t.balance}</Text>
-        <Text style={{ fontSize: font.xl + 6, fontWeight: '900', color: contact.balance > 0 ? colors.danger : colors.success }}>
-          {formatMoney(contact.balance, lang)}
-        </Text>
+        {contact.payable !== 0 ? balanceLine('PAYABLE', contact.payable) : null}
+        {contact.receivable !== 0 ? balanceLine('RECEIVABLE', contact.receivable) : null}
+        {contact.payable === 0 && contact.receivable === 0 ? (
+          <Text style={{ fontSize: font.lg, fontWeight: '900', color: colors.success }}>✓ 0</Text>
+        ) : null}
         {contact.notes ? <Text style={styles.body}>{contact.notes}</Text> : null}
       </Card>
 
-      {contact.balance > 0 ? (
-        <BigButton label={`💵 ${t.pay}`} color={colors.success} onPress={() => router.push({ pathname: '/payment', params: { contactId: contact.id } })} />
+      {contact.payable > 0 ? (
+        <BigButton
+          label={t.payDirection.PAYABLE}
+          color={colors.danger}
+          onPress={() => router.push({ pathname: '/payment', params: { contactId: contact.id, direction: 'PAYABLE' } })}
+        />
+      ) : null}
+      {contact.receivable > 0 ? (
+        <BigButton
+          label={t.payDirection.RECEIVABLE}
+          color={colors.success}
+          onPress={() => router.push({ pathname: '/payment', params: { contactId: contact.id, direction: 'RECEIVABLE' } })}
+        />
       ) : null}
       <View style={styles.row}>
         <Btn label={t.actionCredit} variant="earth" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/credit/new', params: { contactId: contact.id } })} />
       </View>
       <View style={styles.row}>
         <Btn label={t.actionInstrument} variant="outline" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/instruments/new', params: { contactId: contact.id } })} />
+      </View>
+      <View style={styles.row}>
+        <Btn label={t.sendStatement} variant="outline" style={{ flex: 1 }} onPress={askStatement} />
         {contact.phone ? <Btn label={t.call} variant="outline" onPress={() => Linking.openURL(`tel:${contact.phone}`)} /> : null}
       </View>
+      <Btn label={t.fullHistory} variant="outline" onPress={() => router.push({ pathname: '/history', params: { contactId: contact.id } })} />
 
-      <SectionTitle>{t.ledger}</SectionTitle>
-      {ledger.length === 0 ? (
-        <Empty text={t.emptyLedger} />
-      ) : (
-        <View style={table.wrap}>
-          <View style={[table.row, table.head]}>
-            <Text style={[table.cell, table.date, table.headText]}>{t.colDate}</Text>
-            <Text style={[table.cell, table.desc, table.headText]}>{t.colDesc}</Text>
-            <Text style={[table.cell, table.num, table.headText]}>{t.colAmount}</Text>
-            <Text style={[table.cell, table.num, table.headText]}>{t.colPaid}</Text>
-            <Text style={[table.cell, table.num, table.headText]}>{t.colRest}</Text>
-          </View>
-          {ledger.map((r) => {
-            const rest = r.total - r.paid;
-            return (
-              <Pressable
-                key={r.kind + r.id}
-                onPress={() =>
-                  rest > 0 && router.push({ pathname: '/payment', params: { contactId: contact.id, kind: r.kind, itemId: r.id } })
-                }
-                onLongPress={() => askDeleteRow(r)}
-                style={({ pressed }) => [table.row, pressed && { backgroundColor: colors.oliveLight }]}
-              >
-                <Text style={[table.cell, table.date]}>{formatDate(r.d).slice(0, 5)}</Text>
-                <Text style={[table.cell, table.desc]} numberOfLines={2}>
-                  {rowLabel(r)}
-                </Text>
-                <Text style={[table.cell, table.num]}>{money(r.total)}</Text>
-                <Text style={[table.cell, table.num, { color: colors.success }]}>{money(r.paid)}</Text>
-                <Text style={[table.cell, table.num, { color: rest > 0 ? colors.danger : colors.success, fontWeight: '800' }]}>
-                  {rest > 0 ? money(rest) : '✓'}
-                </Text>
-              </Pressable>
-            );
-          })}
-          <View style={[table.row, table.head]}>
-            <Text style={[table.cell, table.date, table.headText]} />
-            <Text style={[table.cell, table.desc, table.headText]}>{t.total}</Text>
-            <Text style={[table.cell, table.num, table.headText]}>{money(totals.total)}</Text>
-            <Text style={[table.cell, table.num, table.headText]}>{money(totals.paid)}</Text>
-            <Text style={[table.cell, table.num, table.headText]}>{money(totals.total - totals.paid)}</Text>
-          </View>
-        </View>
-      )}
+      {ledger.length === 0 ? <Empty text={t.emptyLedger} /> : null}
+      {table('PAYABLE')}
+      {table('RECEIVABLE')}
       {ledger.length ? <Text style={[styles.muted, { textAlign: 'center' }]}>{t.ledgerHint}</Text> : null}
 
       {instruments.length ? <SectionTitle>{t.paymentsAndInstruments}</SectionTitle> : null}
@@ -128,8 +177,9 @@ export default function ContactSheet() {
           key={i.id}
           inst={i}
           showContact={false}
-          onMarkPaid={(iid) => markInstrumentPaid(db, iid).then(load)}
-          onCancel={(iid) => cancelInstrument(db, iid).then(load)}
+          onPress={() => router.push({ pathname: '/operation', params: { kind: 'I', id: i.id } })}
+          onMarkPaid={(iid) => setInstrumentStatus(db, iid, 'DEBITED_PAID').then(() => done())}
+          onCancel={(iid) => setInstrumentStatus(db, iid, 'CANCELLED').then(() => done())}
         />
       ))}
 
@@ -141,13 +191,13 @@ export default function ContactSheet() {
   );
 }
 
-const table = StyleSheet.create({
+const tbl = StyleSheet.create({
   wrap: { backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', minHeight: 48, borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: 6 },
+  row: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: 6 },
   head: { backgroundColor: colors.earthLight },
   headText: { fontWeight: '800', color: colors.earth },
   cell: { fontSize: font.sm - 1, color: colors.text, paddingHorizontal: 3 },
   date: { flex: 1 },
-  desc: { flex: 2.2 },
+  desc: { flex: 2.4 },
   num: { flex: 1.3, textAlign: 'right' },
 });

@@ -1,0 +1,17 @@
+import { parseMoney, formatMoney, centsToInput, parseNumber } from '../src/utils/money.ts';
+import { addDays, daysUntil, today, formatDate } from '../src/utils/dates.ts';
+const eq = (a, b, m) => { if (a !== b) { console.error('FAIL', m, JSON.stringify(a), '!=', JSON.stringify(b)); process.exitCode = 1; } };
+eq(parseMoney('1 250,5'), 125050, 'parse comma');
+eq(parseMoney('0.1'), 10, 'parse 0.1');
+eq(parseMoney('19.99'), 1999, 'parse 19.99');
+eq(parseMoney('abc'), null, 'parse invalid');
+eq(parseMoney('1.234'), null, 'parse 3 decimals');
+eq(formatMoney(1250050, 'fr'), '12 500,50 DH', 'format fr');
+eq(formatMoney(300000, 'ar'), '3 000 درهم', 'format ar');
+eq(centsToInput(125050), '1250,50', 'to input');
+eq(parseNumber('2,5'), 2.5, 'days');
+eq(Math.round(parseNumber('3') * parseMoney('120')), 36000, '3j x 120');
+eq(daysUntil(addDays(today(), 3)), 3, 'daysUntil');
+eq(addDays('2026-12-30', 3), '2027-01-02', 'year rollover');
+eq(formatDate('2026-11-05'), '05/11/2026', 'formatDate');
+console.log(process.exitCode ? 'some tests failed' : 'all utils tests passed');

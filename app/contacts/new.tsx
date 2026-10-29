@@ -6,8 +6,9 @@ import { Btn, Chips, Field, Label, Screen, styles } from '../../src/components/u
 import { getContact, saveContact } from '../../src/db/repo';
 import type { ContactType } from '../../src/db/types';
 import { useI18n } from '../../src/i18n';
+import { useAppState } from '../../src/state';
 
-const TYPES: ContactType[] = ['SUPPLIER', 'FAMILY_LENDER', 'EMPLOYEE', 'OTHER'];
+const TYPES: ContactType[] = ['SUPPLIER', 'CUSTOMER', 'FAMILY_LENDER', 'EMPLOYEE', 'OTHER'];
 
 /** Création, ou modification si ?id= est fourni. */
 export default function ContactForm() {
@@ -15,6 +16,7 @@ export default function ContactForm() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string; type?: ContactType }>();
   const { t } = useI18n();
+  const { done } = useAppState();
   const [name, setName] = useState('');
   const [type, setType] = useState<ContactType>(params.type ?? 'SUPPLIER');
   const [phone, setPhone] = useState('');
@@ -35,6 +37,7 @@ export default function ContactForm() {
   const submit = async () => {
     if (!name.trim()) return setError(t.required);
     await saveContact(db, { id: params.id, name, type, phone, notes });
+    done();
     router.back();
   };
 

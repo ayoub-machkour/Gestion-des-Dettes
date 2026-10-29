@@ -3,23 +3,25 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { InstrumentCard } from '../../src/components/InstrumentCard';
 import { Btn, Chips, Empty, Screen, SectionTitle } from '../../src/components/ui';
-import { cancelInstrument, listInstruments, markInstrumentPaid } from '../../src/db/repo';
+import { listInstruments, setInstrumentStatus } from '../../src/db/repo';
 import type { InstrumentWithContact } from '../../src/db/types';
 import { useI18n } from '../../src/i18n';
+import { useAppState } from '../../src/state';
 
 /** Échéancier : chèques, traites et billets regroupés par mois d'échéance. */
 export default function InstrumentsCalendar() {
   const db = useSQLiteContext();
   const router = useRouter();
   const { t } = useI18n();
+  const { version, done } = useAppState();
   const [filter, setFilter] = useState<'PENDING' | 'ALL'>('PENDING');
   const [items, setItems] = useState<InstrumentWithContact[]>([]);
 
-  const load = useCallback(() => {
-    listInstruments(db, { status: filter === 'PENDING' ? 'PENDING' : undefined, excludeCash: true }).then(setItems);
-  }, [db, filter]);
-
-  useFocusEffect(load);
+  useFocusEffect(
+    useCallback(() => {
+      listInstruments(db, { status: filter === 'PENDING' ? 'PENDING' : undefined, excludeCash: true }).then(setItems);
+    }, [db, filter, version]),
+  );
 
   const groups = new Map<string, InstrumentWithContact[]>();
   for (const i of items) {
@@ -47,8 +49,9 @@ export default function InstrumentsCalendar() {
             <InstrumentCard
               key={i.id}
               inst={i}
-              onMarkPaid={(id) => markInstrumentPaid(db, id).then(load)}
-              onCancel={(id) => cancelInstrument(db, id).then(load)}
+              onPress={() => router.push({ pathname: '/operation', params: { kind: 'I', id: i.id } })}
+              onMarkPaid={(id) => setInstrumentStatus(db, id, 'DEBITED_PAID').then(() => done())}
+              onCancel={(id) => setInstrumentStatus(db, id, 'CANCELLED').then(() => done())}
             />
           )),
         ];

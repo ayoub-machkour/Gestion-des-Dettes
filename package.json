@@ -8,7 +8,8 @@
     "android": "expo run:android",
     "build:apk": "eas build -p android --profile preview",
     "build:store": "eas build -p android --profile production",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/register.mjs tests/utils.test.mts && node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/register.mjs tests/undo.test.mts && node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/register.mjs tests/repo.test.mts"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "9.2.1",

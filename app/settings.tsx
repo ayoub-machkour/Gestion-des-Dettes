@@ -3,10 +3,12 @@ import { Alert, Text } from 'react-native';
 import { BigButton, Btn, Card, Screen, SectionTitle, styles } from '../src/components/ui';
 import { useI18n } from '../src/i18n';
 import type { Lang } from '../src/i18n/dicts';
-import { ensureNotificationPermission, hasNotificationPermission } from '../src/notifications';
+import { useSQLiteContext } from 'expo-sqlite';
+import { ensureNotificationPermission, hasNotificationPermission, syncReminders } from '../src/notifications';
 import { colors } from '../src/theme';
 
 export default function Settings() {
+  const db = useSQLiteContext();
   const { t, lang, setLang } = useI18n();
   const [notifOk, setNotifOk] = useState<boolean | null>(null);
 
@@ -34,7 +36,14 @@ export default function Settings() {
       ) : (
         <>
           {notifOk === false ? <Text style={styles.muted}>{t.notifDenied}</Text> : null}
-          <Btn label={t.enableNotifications} onPress={() => ensureNotificationPermission().then(setNotifOk)} />
+          <Btn
+            label={t.enableNotifications}
+            onPress={async () => {
+              const ok = await ensureNotificationPermission();
+              setNotifOk(ok);
+              if (ok) await syncReminders(db, lang);
+            }}
+          />
         </>
       )}
 

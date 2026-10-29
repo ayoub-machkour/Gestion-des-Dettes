@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import { colors, font } from '../theme';
 import { daysUntil, formatDate } from '../utils/dates';
 import { formatMoney } from '../utils/money';
+import { DIRECTION_COLORS } from './domain';
 import { Badge, Btn, Card, styles } from './ui';
 
 /** Couleur d'urgence : rouge si en retard ou dans la fenêtre de rappel, orange sous 7 jours. */
@@ -18,18 +19,21 @@ export function urgencyColor(inst: InstrumentWithContact): string {
 export function InstrumentCard({
   inst,
   showContact = true,
+  onPress,
   onMarkPaid,
   onCancel,
 }: {
   inst: InstrumentWithContact;
   showContact?: boolean;
+  onPress?: () => void;
   onMarkPaid?: (id: string) => void;
   onCancel?: (id: string) => void;
 }) {
   const { t, lang } = useI18n();
   const pending = inst.status === 'PENDING';
-  const urgency = urgencyColor(inst);
+  const cash = inst.instrument_type === 'CASH';
   const days = daysUntil(inst.maturity_due_date);
+  const dir = DIRECTION_COLORS[inst.direction];
   const statusColors = {
     PENDING: [colors.warning, colors.warningLight],
     DEBITED_PAID: [colors.success, colors.successLight],
@@ -43,19 +47,23 @@ export function InstrumentCard({
     ]);
 
   return (
-    <Card style={{ borderStartWidth: 8, borderStartColor: urgency }}>
+    <Card onPress={onPress} style={{ borderStartWidth: 8, borderStartColor: cash ? dir.fg : urgencyColor(inst) }}>
       <View style={styles.row}>
         <Text style={[styles.body, { flex: 1, fontWeight: '800' }]}>
-          {t.instrTypes[inst.instrument_type]}
+          {dir.dot} {t.instrTypes[inst.instrument_type]}
           {inst.reference_number ? ` · n° ${inst.reference_number}` : ''}
         </Text>
-        <Text style={{ fontSize: font.lg, fontWeight: '800', color: colors.text }}>{formatMoney(inst.amount, lang)}</Text>
+        <Text style={{ fontSize: font.lg, fontWeight: '800', color: dir.fg }}>{formatMoney(inst.amount, lang)}</Text>
       </View>
+      <Text style={styles.muted}>
+        {cash ? t.paymentDir[inst.direction] : t.instrDirection[inst.direction]}
+        {inst.photos ? `  ·  ${t.photoCount(inst.photos)}` : ''}
+      </Text>
       {showContact ? <Text style={styles.body}>👤 {inst.contact_name}</Text> : null}
       <View style={styles.row}>
         <Text style={[styles.muted, { flex: 1 }]}>
-          📅 {formatDate(inst.maturity_due_date)}
-          {pending && inst.instrument_type !== 'CASH' ? `  ·  ${t.inDays(days)}` : ''}
+          📅 {formatDate(cash ? inst.issue_date : inst.maturity_due_date)}
+          {pending && !cash ? `  ·  ${t.inDays(days)}` : ''}
         </Text>
         <Badge text={t.instrStatus[inst.status]} color={statusColors[0]} bg={statusColors[1]} />
       </View>
