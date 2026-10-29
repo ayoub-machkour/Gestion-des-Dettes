@@ -22,7 +22,15 @@
       ]
     },
     "extra": {
-      "supportsRTL": true
+      "supportsRTL": true,
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "c419e0fb-2720-4919-9276-a6c2a04e271c"
+      }
     },
     "plugins": [
       "expo-router",

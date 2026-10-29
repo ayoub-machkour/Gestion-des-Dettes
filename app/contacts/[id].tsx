@@ -1,203 +1,170 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import { DIRECTION_COLORS, LateBadge } from '../../src/components/domain';
-import { InstrumentCard } from '../../src/components/InstrumentCard';
-import { BigButton, Btn, Card, Empty, Screen, SectionTitle, styles } from '../../src/components/ui';
-import { deleteContact, getContact, getLedger, listInstruments, setInstrumentStatus } from '../../src/db/repo';
-import type { ContactWithBalance, Direction, InstrumentWithContact, LedgerRow } from '../../src/db/types';
+import { Alert, Pressable, Text, View } from 'react-native';
+import { LateBadge } from '../../src/components/domain';
+import { Avatar, Button, Empty, Pill, Screen, SectionHeader, styles } from '../../src/components/ui';
+import { getContact, getLedger, getTimeline, listInstruments } from '../../src/db/repo';
+import type { ContactWithBalance, Direction, InstrumentType, TimelineRow, WorkType } from '../../src/db/types';
 import { useI18n } from '../../src/i18n';
 import { useAppState } from '../../src/state';
-import { rowLabel, sendStatementWhatsApp, shareStatementPdf } from '../../src/statement';
-import { colors, font } from '../../src/theme';
-import { formatDate } from '../../src/utils/dates';
+import { sendStatementWhatsApp, shareStatementPdf } from '../../src/statement';
+import { colors, font, radius } from '../../src/theme';
+import { daysUntil, formatDate } from '../../src/utils/dates';
 import { formatMoney } from '../../src/utils/money';
 
-export default function ContactSheet() {
+/** Fiche d'une personne : ce qui est dû, deux actions principales, et toutes les opérations. */
+export default function PersonPage() {
   const db = useSQLiteContext();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t, lang } = useI18n();
-  const { version, done } = useAppState();
-  const [contact, setContact] = useState<ContactWithBalance | null>(null);
-  const [ledger, setLedger] = useState<LedgerRow[]>([]);
-  const [instruments, setInstruments] = useState<InstrumentWithContact[]>([]);
+  const { version } = useAppState();
+  const [person, setPerson] = useState<ContactWithBalance | null>(null);
+  const [timeline, setTimeline] = useState<TimelineRow[]>([]);
 
   useFocusEffect(
     useCallback(() => {
-      getContact(db, id).then(setContact);
-      getLedger(db, id).then(setLedger);
-      listInstruments(db, { contactId: id }).then((list) => setInstruments(list.reverse()));
+      getContact(db, id).then(setPerson);
+      getTimeline(db, id).then(setTimeline);
     }, [db, id, version]),
   );
 
-  if (!contact) return null;
-
-  const money = (c: number) => formatMoney(c, lang).replace(/ (DH|درهم)$/, '');
-  const statement = { contact, ledger, payments: instruments };
+  if (!person) return null;
+  const employee = person.type === 'EMPLOYEE';
 
   const askStatement = () =>
-    Alert.alert(t.statementTitle, contact.name, [
-      { text: t.cancel, style: 'cancel' },
-      { text: t.statementText, onPress: () => sendStatementWhatsApp(statement, t, lang) },
-      { text: t.statementPdf, onPress: () => shareStatementPdf(statement, t, lang) },
-    ]);
-
-  const askDeleteContact = () =>
-    Alert.alert(t.deleteContactConfirm, contact.name, [
+    Alert.alert(t.statementTitle, person.name, [
       { text: t.cancel, style: 'cancel' },
       {
-        text: t.delete,
-        style: 'destructive',
-        onPress: async () => {
-          await deleteContact(db, contact.id);
-          done(t.deleted);
-          router.back();
-        },
+        text: t.statementText,
+        onPress: async () => sendStatementWhatsApp({ contact: person, ledger: await getLedger(db, id), payments: await listInstruments(db, { contactId: id }) }, t, lang),
+      },
+      {
+        text: t.statementPdf,
+        onPress: async () => shareStatementPdf({ contact: person, ledger: await getLedger(db, id), payments: await listInstruments(db, { contactId: id }) }, t, lang),
       },
     ]);
 
-  const balanceLine = (direction: Direction, amount: number) => {
-    const c = DIRECTION_COLORS[direction];
-    const label = direction === 'PAYABLE' ? t.iOweHim : t.heOwesMe;
-    return (
-      <View style={[styles.row, { backgroundColor: c.bg, borderRadius: 10, padding: 10 }]}>
-        <Text style={{ flex: 1, fontSize: font.md, fontWeight: '800', color: c.fg }}>
-          {c.dot} {amount < 0 ? t.advance : label}
-        </Text>
-        <Text style={{ fontSize: font.xl, fontWeight: '900', color: c.fg }}>{formatMoney(Math.abs(amount), lang)}</Text>
-      </View>
-    );
-  };
-
-  const table = (direction: Direction) => {
-    const rows = ledger.filter((r) => r.direction === direction);
-    if (!rows.length) return null;
-    const totals = rows.reduce((acc, r) => ({ total: acc.total + r.total, paid: acc.paid + r.paid }), { total: 0, paid: 0 });
-    const c = DIRECTION_COLORS[direction];
-    return (
-      <>
-        <SectionTitle>
-          {c.dot} {direction === 'PAYABLE' ? t.iOweHim : t.heOwesMe}
-        </SectionTitle>
-        <View style={tbl.wrap}>
-          <View style={[tbl.row, tbl.head]}>
-            <Text style={[tbl.cell, tbl.date, tbl.headText]}>{t.colDate}</Text>
-            <Text style={[tbl.cell, tbl.desc, tbl.headText]}>{t.colDesc}</Text>
-            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{t.colAmount}</Text>
-            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{t.colPaid}</Text>
-            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{t.colRest}</Text>
-          </View>
-          {rows.map((r) => {
-            const rest = r.total - r.paid;
-            return (
-              <Pressable
-                key={r.kind + r.id}
-                onPress={() => router.push({ pathname: '/operation', params: { kind: r.kind, id: r.id } })}
-                style={({ pressed }) => [tbl.row, pressed && { backgroundColor: colors.oliveLight }]}
-              >
-                <Text style={[tbl.cell, tbl.date]}>{formatDate(r.d).slice(0, 5)}</Text>
-                <View style={[tbl.desc, { paddingVertical: 6, gap: 3 }]}>
-                  <Text style={tbl.cell} numberOfLines={2}>
-                    {rowLabel(t, r, lang)}
-                    {r.photos ? ' 📷' : ''}
-                  </Text>
-                  <LateBadge due={r.due} date={r.d} rest={rest} compact />
-                </View>
-                <Text style={[tbl.cell, tbl.num]}>{money(r.total)}</Text>
-                <Text style={[tbl.cell, tbl.num, { color: colors.success }]}>{money(r.paid)}</Text>
-                <Text style={[tbl.cell, tbl.num, { color: rest > 0 ? c.fg : colors.success, fontWeight: '800' }]}>{rest > 0 ? money(rest) : '✓'}</Text>
-              </Pressable>
-            );
-          })}
-          <View style={[tbl.row, tbl.head]}>
-            <Text style={[tbl.cell, tbl.date]} />
-            <Text style={[tbl.cell, tbl.desc, tbl.headText]}>{t.total}</Text>
-            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{money(totals.total)}</Text>
-            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{money(totals.paid)}</Text>
-            <Text style={[tbl.cell, tbl.num, tbl.headText]}>{money(totals.total - totals.paid)}</Text>
-          </View>
-        </View>
-      </>
-    );
-  };
+  const balanceRows: { label: string; amount: number; color: string; bg: string }[] = [];
+  if (person.payable !== 0)
+    balanceRows.push({ label: person.payable > 0 ? t.youOwe : t.advanceGiven, amount: Math.abs(person.payable), color: colors.danger, bg: colors.dangerSoft });
+  if (person.receivable !== 0)
+    balanceRows.push({ label: person.receivable > 0 ? t.heOwesYou : t.advanceReceived, amount: Math.abs(person.receivable), color: colors.success, bg: colors.successSoft });
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: contact.name }} />
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Pressable onPress={() => router.push({ pathname: '/contacts/new', params: { id } })} hitSlop={10}>
+              <Text style={{ fontSize: font.md, fontWeight: '700', color: colors.primary }}>{t.edit}</Text>
+            </Pressable>
+          ),
+        }}
+      />
 
-      <Card>
-        <Text style={styles.muted}>
-          {t.contactTypes[contact.type]}
-          {contact.phone ? ` · ${contact.phone}` : ''}
-        </Text>
-        {contact.payable !== 0 ? balanceLine('PAYABLE', contact.payable) : null}
-        {contact.receivable !== 0 ? balanceLine('RECEIVABLE', contact.receivable) : null}
-        {contact.payable === 0 && contact.receivable === 0 ? (
-          <Text style={{ fontSize: font.lg, fontWeight: '900', color: colors.success }}>✓ 0</Text>
-        ) : null}
-        {contact.notes ? <Text style={styles.body}>{contact.notes}</Text> : null}
-      </Card>
+      <View style={[styles.card, { alignItems: 'center', paddingVertical: 24, gap: 10 }]}>
+        <Avatar name={person.name} size={72} />
+        <Text style={{ fontSize: font.xl, fontWeight: '800', color: colors.text, textAlign: 'center' }}>{person.name}</Text>
+        <Text style={styles.muted}>{t.contactTypes[person.type]}</Text>
+        <View style={{ alignSelf: 'stretch', gap: 8, marginTop: 6 }}>
+          {balanceRows.length ? (
+            balanceRows.map((b) => (
+              <View key={b.label} style={{ backgroundColor: b.bg, borderRadius: radius.md, padding: 14, alignItems: 'center' }}>
+                <Text style={{ fontSize: font.sm, fontWeight: '600', color: b.color }}>{b.label}</Text>
+                <Text style={{ fontSize: font.xxl, fontWeight: '800', color: b.color }}>{formatMoney(b.amount, lang)}</Text>
+              </View>
+            ))
+          ) : (
+            <View style={{ backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: 14, alignItems: 'center' }}>
+              <Text style={{ fontSize: font.lg, fontWeight: '700', color: colors.success }}>✓ {t.allSettled}</Text>
+            </View>
+          )}
+        </View>
+      </View>
 
-      {contact.payable > 0 ? (
-        <BigButton
-          label={t.payDirection.PAYABLE}
-          color={colors.danger}
-          onPress={() => router.push({ pathname: '/payment', params: { contactId: contact.id, direction: 'PAYABLE' } })}
-        />
-      ) : null}
-      {contact.receivable > 0 ? (
-        <BigButton
-          label={t.payDirection.RECEIVABLE}
-          color={colors.success}
-          onPress={() => router.push({ pathname: '/payment', params: { contactId: contact.id, direction: 'RECEIVABLE' } })}
-        />
-      ) : null}
       <View style={styles.row}>
-        <Btn label={t.actionCredit} variant="earth" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/credit/new', params: { contactId: contact.id } })} />
+        <Button
+          label={employee ? t.addWork : t.newPurchase}
+          style={{ flex: 1 }}
+          onPress={() => (employee ? router.push({ pathname: '/payroll/new', params: { contactId: id } }) : router.push({ pathname: '/credit/new', params: { contactId: id } }))}
+        />
+        <Button label={t.payment} variant="success" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/payment', params: { contactId: id } })} />
       </View>
       <View style={styles.row}>
-        <Btn label={t.actionInstrument} variant="outline" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/instruments/new', params: { contactId: contact.id } })} />
+        <Button label={t.check} variant="secondary" size="md" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/instruments/new', params: { contactId: id } })} />
+        <Button label={t.statement} variant="secondary" size="md" style={{ flex: 1 }} onPress={askStatement} />
       </View>
-      <View style={styles.row}>
-        <Btn label={t.sendStatement} variant="outline" style={{ flex: 1 }} onPress={askStatement} />
-        {contact.phone ? <Btn label={t.call} variant="outline" onPress={() => Linking.openURL(`tel:${contact.phone}`)} /> : null}
-      </View>
-      <Btn label={t.fullHistory} variant="outline" onPress={() => router.push({ pathname: '/history', params: { contactId: contact.id } })} />
 
-      {ledger.length === 0 ? <Empty text={t.emptyLedger} /> : null}
-      {table('PAYABLE')}
-      {table('RECEIVABLE')}
-      {ledger.length ? <Text style={[styles.muted, { textAlign: 'center' }]}>{t.ledgerHint}</Text> : null}
-
-      {instruments.length ? <SectionTitle>{t.paymentsAndInstruments}</SectionTitle> : null}
-      {instruments.map((i) => (
-        <InstrumentCard
-          key={i.id}
-          inst={i}
-          showContact={false}
-          onPress={() => router.push({ pathname: '/operation', params: { kind: 'I', id: i.id } })}
-          onMarkPaid={(iid) => setInstrumentStatus(db, iid, 'DEBITED_PAID').then(() => done())}
-          onCancel={(iid) => setInstrumentStatus(db, iid, 'CANCELLED').then(() => done())}
-        />
+      <SectionHeader title={t.operations} />
+      {timeline.length === 0 ? <Empty icon="📒" title={t.emptyOpsTitle} text={t.emptyOpsText} /> : null}
+      {timeline.map((row) => (
+        <TimelineItem key={row.kind + row.id} row={row} onPress={() => router.push({ pathname: '/operation', params: { kind: row.kind, id: row.id } })} />
       ))}
-
-      <View style={[styles.row, { marginTop: 16 }]}>
-        <Btn label={t.edit} variant="outline" style={{ flex: 1 }} onPress={() => router.push({ pathname: '/contacts/new', params: { id: contact.id } })} />
-        <Btn label={t.delete} variant="danger" style={{ flex: 1 }} onPress={askDeleteContact} />
-      </View>
     </Screen>
   );
 }
 
-const tbl = StyleSheet.create({
-  wrap: { backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: 6 },
-  head: { backgroundColor: colors.earthLight },
-  headText: { fontWeight: '800', color: colors.earth },
-  cell: { fontSize: font.sm - 1, color: colors.text, paddingHorizontal: 3 },
-  date: { flex: 1 },
-  desc: { flex: 2.4 },
-  num: { flex: 1.3, textAlign: 'right' },
-});
+function TimelineItem({ row, onPress }: { row: TimelineRow; onPress: () => void }) {
+  const { t, lang } = useI18n();
+  const dirColor = (d: Direction) => (d === 'PAYABLE' ? colors.danger : colors.success);
+  let icon: string;
+  let title: string;
+  let amountColor = colors.text;
+  let footer: React.ReactNode = null;
+
+  if (row.kind === 'I') {
+    const type = row.sub as InstrumentType;
+    if (type === 'CASH') {
+      icon = '💵';
+      title = t.paymentTitle[row.direction];
+      amountColor = colors.success;
+    } else {
+      icon = '📄';
+      title = `${t.instrTypes[type]}${row.title ? ` n° ${row.title}` : ''}`;
+      const pending = row.status === 'PENDING';
+      footer = (
+        <View style={[styles.row, { gap: 6 }]}>
+          <Pill text={t.instrStatus[row.status as 'PENDING']} tone={pending ? 'warning' : row.status === 'CANCELLED' ? 'neutral' : 'success'} />
+          {pending && row.due ? <Pill text={t.inDays(daysUntil(row.due))} tone={daysUntil(row.due) < 0 ? 'danger' : 'neutral'} /> : null}
+        </View>
+      );
+    }
+  } else {
+    icon = row.kind === 'P' ? '👷' : row.direction === 'PAYABLE' ? '🛒' : '🧺';
+    title =
+      row.kind === 'P'
+        ? t.wageLabel(t.workTypes[row.sub as WorkType], row.days ?? 0, formatMoney(row.rate ?? 0, lang))
+        : row.title || t.txTitle[row.direction];
+    amountColor = dirColor(row.direction);
+    const rest = row.amount - (row.paid ?? 0);
+    footer = (
+      <View style={[styles.row, { gap: 6, flexWrap: 'wrap' }]}>
+        {rest > 0 ? <Pill text={t.restAmount(formatMoney(rest, lang))} tone={row.direction === 'PAYABLE' ? 'danger' : 'success'} /> : <Pill text={t.paid} tone="neutral" />}
+        <LateBadge due={row.due} rest={rest} />
+      </View>
+    );
+  }
+
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { gap: 10 }, pressed && styles.pressed]}>
+      <View style={styles.row}>
+        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: 20 }}>{icon}</Text>
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ fontSize: font.md, fontWeight: '700', color: colors.text }} numberOfLines={2}>
+            {title}
+          </Text>
+          <Text style={styles.muted}>
+            {formatDate(row.d)}
+            {row.photos ? `  ·  📎 ${row.photos}` : ''}
+          </Text>
+        </View>
+        <Text style={{ fontSize: font.md + 1, fontWeight: '800', color: amountColor }}>{formatMoney(row.amount, lang)}</Text>
+      </View>
+      {footer}
+    </Pressable>
+  );
+}

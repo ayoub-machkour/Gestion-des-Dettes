@@ -7,8 +7,7 @@ export type InstrumentType = 'CASH' | 'BANK_CHECK' | 'BILL_OF_EXCHANGE' | 'PROMI
 export type InstrumentStatus = 'PENDING' | 'DEBITED_PAID' | 'CANCELLED';
 export type WorkType = 'DAILY_WAGE' | 'GROUP_CONTRACT' | 'MONTHLY';
 export type PayrollStatus = 'PENDING_PAYMENT' | 'PAID';
-export type Crop = 'TOMATO' | 'GREEN_BEANS' | 'CUCUMBER' | 'SWEET_PEPPER' | 'OTHER';
-/** T = dette/créance, P = paie ouvrier, I = effet ou versement. */
+/** T = achat / crédit, P = paie ouvrier, I = paiement ou effet. */
 export type EntityType = 'T' | 'P' | 'I';
 
 export type ActivityAction =
@@ -44,6 +43,7 @@ export interface ContactWithBalance extends Contact {
   receivable: number;
   late_payable: number | null;
   late_receivable: number | null;
+  last_activity: string | null;
 }
 
 export interface Transaction {
@@ -52,7 +52,6 @@ export interface Transaction {
   direction: Direction;
   transaction_type: TransactionType;
   description: string;
-  crop: Crop | null;
   total_amount: number;
   upfront_paid: number;
   paid_amount: number;
@@ -62,11 +61,16 @@ export interface Transaction {
   created_at: string;
 }
 
+export interface TransactionItem {
+  name: string;
+  quantity: number;
+  unit_price: number;
+}
+
 export interface PayrollEntry {
   id: string;
   contact_id: string;
   work_type: WorkType;
-  crop: Crop | null;
   days_worked: number;
   daily_rate: number;
   total_due: number;
@@ -106,7 +110,7 @@ export interface Attachment {
   created_at: string;
 }
 
-/** Ligne du grand livre : une dette/créance (T) ou une paie (P). */
+/** Ligne du grand livre : un achat / crédit (T) ou une paie (P). */
 export interface LedgerRow {
   kind: 'T' | 'P';
   id: string;
@@ -114,7 +118,6 @@ export interface LedgerRow {
   d: string;
   label: string;
   sub: TransactionType | WorkType;
-  crop: Crop | null;
   total: number;
   paid: number;
   due: string | null;
@@ -123,14 +126,21 @@ export interface LedgerRow {
   photos: number;
 }
 
-export interface LateRow {
+/** Une ligne de la fiche d'une personne : achat/crédit, paie, paiement ou effet. */
+export interface TimelineRow {
+  kind: EntityType;
   id: string;
-  contact_id: string;
-  contact_name: string;
+  d: string;
+  title: string | null;
+  sub: TransactionType | WorkType | InstrumentType;
   direction: Direction;
-  description: string;
-  rest: number;
-  due_date: string;
+  amount: number;
+  paid: number | null;
+  due: string | null;
+  status: TransactionStatus | PayrollStatus | InstrumentStatus;
+  days: number | null;
+  rate: number | null;
+  photos: number;
 }
 
 export interface ActivityRow {
@@ -146,24 +156,4 @@ export interface ActivityRow {
   details: string | null;
   photos: number;
   entity_exists: number;
-}
-
-export interface DashboardData {
-  payableTotal: number;
-  receivableTotal: number;
-  pendingWages: number;
-  payableLate: number;
-  receivableLate: number;
-  dueSoonCount: number;
-  overdueCount: number;
-  dueSoonAmount: number;
-  upcoming: InstrumentWithContact[];
-  late: LateRow[];
-}
-
-export interface CropSummary {
-  crop: Crop | 'NONE';
-  expenses: number;
-  wages: number;
-  sales: number;
 }

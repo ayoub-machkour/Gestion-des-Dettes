@@ -1,26 +1,24 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
-import { Btn, Chips, Field, Label, Screen, styles } from '../../src/components/ui';
-import { getContact, saveContact } from '../../src/db/repo';
+import { Alert, View } from 'react-native';
+import { Button, Chips, Field, Label, Screen, styles } from '../../src/components/ui';
+import { deleteContact, getContact, saveContact } from '../../src/db/repo';
 import type { ContactType } from '../../src/db/types';
 import { useI18n } from '../../src/i18n';
 import { useAppState } from '../../src/state';
 
-const TYPES: ContactType[] = ['SUPPLIER', 'CUSTOMER', 'FAMILY_LENDER', 'EMPLOYEE', 'OTHER'];
+const TYPES: ContactType[] = ['SUPPLIER', 'CUSTOMER', 'EMPLOYEE', 'FAMILY_LENDER', 'OTHER'];
 
-/** Création, ou modification si ?id= est fourni. */
-export default function ContactForm() {
+/** Nouvelle personne (nom + type), ou modification / suppression si ?id= est fourni. */
+export default function PersonForm() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string; type?: ContactType }>();
+  const params = useLocalSearchParams<{ id?: string }>();
   const { t } = useI18n();
-  const { done } = useAppState();
+  const { refresh } = useAppState();
   const [name, setName] = useState('');
-  const [type, setType] = useState<ContactType>(params.type ?? 'SUPPLIER');
-  const [phone, setPhone] = useState('');
-  const [notes, setNotes] = useState('');
+  const [type, setType] = useState<ContactType>('SUPPLIER');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,29 +27,48 @@ export default function ContactForm() {
       if (!c) return;
       setName(c.name);
       setType(c.type);
-      setPhone(c.phone ?? '');
-      setNotes(c.notes ?? '');
     });
   }, [db, params.id]);
 
   const submit = async () => {
     if (!name.trim()) return setError(t.required);
-    await saveContact(db, { id: params.id, name, type, phone, notes });
-    done();
-    router.back();
+    const id = await saveContact(db, { id: params.id, name, type });
+    refresh();
+    if (params.id) router.back();
+    else router.replace(`/contacts/${id}`);
   };
 
+  const askDelete = () =>
+    Alert.alert(t.deletePerson, t.deletePersonConfirm, [
+      { text: t.cancel, style: 'cancel' },
+      {
+        text: t.delete,
+        style: 'destructive',
+        onPress: async () => {
+          await deleteContact(db, params.id!);
+          refresh();
+          router.dismissAll();
+        },
+      },
+    ]);
+
   return (
-    <Screen>
-      {params.id ? <Stack.Screen options={{ title: t.editContact }} /> : null}
-      <Field label={t.name} value={name} onChangeText={(v) => (setName(v), setError(null))} placeholder={t.namePlaceholder} error={error} autoFocus={!params.id} />
+    <Screen footer={<Button label={t.save} onPress={submit} />}>
+      {params.id ? <Stack.Screen options={{ title: t.editPerson }} /> : null}
+      <Field
+        label={t.name}
+        value={name}
+        onChangeText={(v) => (setName(v), setError(null))}
+        placeholder={t.namePlaceholder}
+        error={error}
+        autoFocus={!params.id}
+        style={{ fontSize: 20, minHeight: 62 }}
+      />
       <View style={styles.field}>
         <Label>{t.type}</Label>
-        <Chips options={TYPES.map((v) => ({ value: v, label: t.contactTypes[v] }))} value={type} onChange={setType} />
+        <Chips options={TYPES.map((v) => ({ value: v, label: t.contactTypes[v] }))} value={type} onChange={(v) => v && setType(v)} />
       </View>
-      <Field label={t.phone} value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="06 00 00 00 00" />
-      <Field label={t.notes} value={notes} onChangeText={setNotes} multiline />
-      <Btn label={t.save} onPress={submit} />
+      {params.id ? <Button label={t.deletePerson} variant="danger" size="md" onPress={askDelete} style={{ marginTop: 24 }} /> : null}
     </Screen>
   );
 }

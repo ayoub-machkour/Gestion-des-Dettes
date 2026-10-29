@@ -1,9 +1,9 @@
+import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { Alert, Text } from 'react-native';
-import { BigButton, Btn, Card, Screen, SectionTitle, styles } from '../src/components/ui';
+import { Button, Card, Screen, SectionHeader, Segmented, styles } from '../src/components/ui';
 import { useI18n } from '../src/i18n';
 import type { Lang } from '../src/i18n/dicts';
-import { useSQLiteContext } from 'expo-sqlite';
 import { ensureNotificationPermission, hasNotificationPermission, syncReminders } from '../src/notifications';
 import { colors } from '../src/theme';
 
@@ -26,18 +26,27 @@ export default function Settings() {
 
   return (
     <Screen>
-      <SectionTitle>{t.language}</SectionTitle>
-      <BigButton label={`${lang === 'fr' ? '✓ ' : ''}Français`} color={lang === 'fr' ? colors.olive : colors.muted} onPress={() => choose('fr')} />
-      <BigButton label={`${lang === 'ar' ? '✓ ' : ''}العربية`} color={lang === 'ar' ? colors.olive : colors.muted} onPress={() => choose('ar')} />
+      <SectionHeader title={t.language} />
+      <Segmented<Lang>
+        options={[
+          { value: 'ar', label: 'العربية' },
+          { value: 'fr', label: 'Français' },
+        ]}
+        value={lang}
+        onChange={choose}
+      />
 
-      <SectionTitle>{t.notifications}</SectionTitle>
+      <SectionHeader title={t.notifications} />
       {notifOk ? (
-        <Text style={[styles.body, { color: colors.success, fontWeight: '700' }]}>{t.notifEnabled}</Text>
+        <Card>
+          <Text style={[styles.body, { color: colors.success, fontWeight: '700' }]}>{t.notifEnabled}</Text>
+        </Card>
       ) : (
         <>
           {notifOk === false ? <Text style={styles.muted}>{t.notifDenied}</Text> : null}
-          <Btn
+          <Button
             label={t.enableNotifications}
+            variant="soft"
             onPress={async () => {
               const ok = await ensureNotificationPermission();
               setNotifOk(ok);
@@ -47,9 +56,9 @@ export default function Settings() {
         </>
       )}
 
-      <Card style={{ marginTop: 12 }}>
-        <Text style={styles.body}>🌾 {t.offlineNote}</Text>
-        <Text style={styles.muted}>AgriCompte / الفلاح · v1.0.0</Text>
+      <Card style={{ marginTop: 16 }}>
+        <Text style={styles.body}>🔒 {t.offlineNote}</Text>
+        <Text style={styles.muted}>AgriCompte / الفلاح · v1.1.0</Text>
       </Card>
     </Screen>
   );

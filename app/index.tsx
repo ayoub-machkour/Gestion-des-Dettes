@@ -1,153 +1,106 @@
-import { Stack, useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { DIRECTION_COLORS, LateBadge } from '../src/components/domain';
-import { InstrumentCard } from '../src/components/InstrumentCard';
-import { BigButton, Btn, Card, Empty, Screen, SectionTitle, styles } from '../src/components/ui';
-import { getDashboard } from '../src/db/repo';
-import type { DashboardData } from '../src/db/types';
+import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Avatar, Button, Empty, IconButton, Pill, styles } from '../src/components/ui';
+import { countDueInstruments, listContacts } from '../src/db/repo';
+import type { ContactWithBalance } from '../src/db/types';
 import { useI18n } from '../src/i18n';
 import { useAppState } from '../src/state';
-import { colors, font } from '../src/theme';
+import { colors, font, radius, shadow } from '../src/theme';
 import { formatMoney } from '../src/utils/money';
 
-export default function Dashboard() {
+/** Accueil : la liste des personnes avec qui on travaille, et un seul bouton pour en ajouter. */
+export default function Home() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const { t, lang } = useI18n();
+  const insets = useSafeAreaInsets();
+  const { t } = useI18n();
   const { version } = useAppState();
-  const [data, setData] = useState<DashboardData | null>(null);
+  const [people, setPeople] = useState<ContactWithBalance[] | null>(null);
+  const [search, setSearch] = useState('');
+  const [dueCount, setDueCount] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
-      getDashboard(db).then(setData);
+      listContacts(db).then(setPeople);
+      countDueInstruments(db).then(setDueCount);
     }, [db, version]),
   );
 
-  const alert = !!data && data.dueSoonCount + data.overdueCount > 0;
+  const visible = (people ?? []).filter((p) => p.name.toLowerCase().includes(search.trim().toLowerCase()));
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <Pressable onPress={() => router.push('/settings')} hitSlop={12}>
-              <Text style={{ fontSize: 26 }}>⚙️</Text>
-            </Pressable>
-          ),
-        }}
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <FlatList
+        data={visible}
+        keyExtractor={(p) => p.id}
+        contentContainerStyle={{ padding: 20, paddingBottom: 130, gap: 12 }}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          <View style={{ gap: 18, marginBottom: 6 }}>
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: font.sm, fontWeight: '700', color: colors.primary, letterSpacing: 0.5 }}>{t.appName}</Text>
+                <Text style={styles.title}>{t.people}</Text>
+                {people?.length ? <Text style={styles.muted}>{t.peopleCount(people.length)}</Text> : null}
+              </View>
+              <IconButton icon="📅" badge={dueCount} onPress={() => router.push('/instruments')} />
+              <IconButton icon="☰" onPress={() => router.push('/menu')} />
+            </View>
+            {(people?.length ?? 0) > 4 ? (
+              <TextInput style={styles.input} value={search} onChangeText={setSearch} placeholder={`🔍  ${t.search}`} placeholderTextColor={colors.muted} />
+            ) : null}
+          </View>
+        }
+        ListEmptyComponent={
+          people === null ? undefined : people.length ? (
+            <Empty icon="🔍" title={t.noResults} />
+          ) : (
+            <Empty icon="🤝" title={t.emptyPeopleTitle} text={t.emptyPeopleText} />
+          )
+        }
+        renderItem={({ item }) => <PersonCard person={item} onPress={() => router.push(`/contacts/${item.id}`)} />}
       />
-      <Screen>
-        <View style={styles.row}>
-          <SummaryCard
-            title={`🔴 ${t.iOwe}`}
-            value={formatMoney(data?.payableTotal ?? 0, lang)}
-            subtitle={t.lateCount(data?.payableLate ?? 0)}
-            color={colors.danger}
-            bg={colors.dangerLight}
-            onPress={() => router.push({ pathname: '/contacts', params: { direction: 'PAYABLE' } })}
-          />
-          <SummaryCard
-            title={`🟢 ${t.owedToMe}`}
-            value={formatMoney(data?.receivableTotal ?? 0, lang)}
-            subtitle={t.lateCount(data?.receivableLate ?? 0)}
-            color={colors.success}
-            bg={colors.successLight}
-            onPress={() => router.push({ pathname: '/contacts', params: { direction: 'RECEIVABLE' } })}
-          />
-        </View>
-        <View style={styles.row}>
-          <SummaryCard
-            title={t.dueSoon}
-            value={formatMoney(data?.dueSoonAmount ?? 0, lang)}
-            subtitle={t.dueSoonSub(data?.dueSoonCount ?? 0, data?.overdueCount ?? 0)}
-            color={alert ? colors.danger : colors.oliveDark}
-            bg={alert ? colors.dangerLight : colors.oliveLight}
-            onPress={() => router.push('/instruments')}
-          />
-          <SummaryCard
-            title={t.pendingWages}
-            value={formatMoney(data?.pendingWages ?? 0, lang)}
-            color={colors.earth}
-            bg={colors.earthLight}
-            onPress={() => router.push({ pathname: '/contacts', params: { type: 'EMPLOYEE' } })}
-          />
-        </View>
-
-        <BigButton label={t.actionCredit} color={colors.earth} onPress={() => router.push('/credit/new')} />
-        <BigButton label={t.actionInstrument} color={colors.oliveDark} onPress={() => router.push('/instruments/new')} />
-        <BigButton label={t.actionPayroll} color={colors.olive} onPress={() => router.push('/payroll/new')} />
-        <BigButton label={t.actionPayment} color={colors.success} onPress={() => router.push('/payment')} />
-
-        <View style={styles.row}>
-          <Btn label={`👥 ${t.contacts}`} variant="outline" style={{ flex: 1 }} onPress={() => router.push('/contacts')} />
-          <Btn label={`📅 ${t.calendar}`} variant="outline" style={{ flex: 1 }} onPress={() => router.push('/instruments')} />
-        </View>
-        <View style={styles.row}>
-          <Btn label={`🕘 ${t.history}`} variant="outline" style={{ flex: 1 }} onPress={() => router.push('/history')} />
-          <Btn label={`🍅 ${t.crops}`} variant="outline" style={{ flex: 1 }} onPress={() => router.push('/crops')} />
-        </View>
-
-        {data?.late.length ? (
-          <>
-            <SectionTitle>{t.lateTitle}</SectionTitle>
-            {data.late.map((l) => (
-              <Card
-                key={l.id}
-                onPress={() => router.push({ pathname: '/operation', params: { kind: 'T', id: l.id } })}
-                style={{ borderStartWidth: 8, borderStartColor: DIRECTION_COLORS[l.direction].fg }}
-              >
-                <View style={styles.row}>
-                  <Text style={[styles.body, { flex: 1, fontWeight: '800' }]} numberOfLines={1}>
-                    {DIRECTION_COLORS[l.direction].dot} {l.contact_name}
-                  </Text>
-                  <Text style={{ fontWeight: '900', fontSize: font.md + 1, color: DIRECTION_COLORS[l.direction].fg }}>{formatMoney(l.rest, lang)}</Text>
-                </View>
-                <View style={styles.row}>
-                  <Text style={[styles.muted, { flex: 1 }]} numberOfLines={1}>
-                    {l.description}
-                  </Text>
-                  <LateBadge due={l.due_date} date={l.due_date} rest={l.rest} />
-                </View>
-              </Card>
-            ))}
-          </>
-        ) : null}
-
-        <SectionTitle>{t.upcoming}</SectionTitle>
-        {data?.upcoming.length ? (
-          data.upcoming.map((i) => <InstrumentCard key={i.id} inst={i} onPress={() => router.push({ pathname: '/operation', params: { kind: 'I', id: i.id } })} />)
-        ) : (
-          <Empty text={t.noInstruments} />
-        )}
-      </Screen>
-    </>
+      <View style={{ position: 'absolute', start: 20, end: 20, bottom: insets.bottom + 18 }}>
+        <Button label={t.addPerson} onPress={() => router.push('/contacts/new')} style={shadow} />
+      </View>
+    </View>
   );
 }
 
-function SummaryCard({
-  title,
-  value,
-  subtitle,
-  color,
-  bg,
-  onPress,
-}: {
-  title: string;
-  value: string;
-  subtitle?: string;
-  color: string;
-  bg: string;
-  onPress: () => void;
-}) {
+function PersonCard({ person, onPress }: { person: ContactWithBalance; onPress: () => void }) {
+  const { t, lang } = useI18n();
+  const late = Math.max(person.late_payable ?? 0, person.late_receivable ?? 0);
+  const balances: { label: string; amount: number; color: string }[] = [];
+  if (person.payable > 0) balances.push({ label: t.iOwe, amount: person.payable, color: colors.danger });
+  if (person.receivable > 0) balances.push({ label: t.owesMe, amount: person.receivable, color: colors.success });
+
   return (
-    <Card onPress={onPress} style={{ flex: 1, backgroundColor: bg, borderColor: color, borderWidth: 2, padding: 12, minHeight: 120 }}>
-      <Text style={{ fontSize: font.sm + 1, fontWeight: '800', color }}>{title}</Text>
-      <Text style={{ fontSize: font.lg + 1, fontWeight: '900', color: colors.text }} adjustsFontSizeToFit numberOfLines={1}>
-        {value}
-      </Text>
-      {subtitle ? <Text style={{ fontSize: font.sm - 1, fontWeight: '700', color }}>{subtitle}</Text> : null}
-    </Card>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, styles.row, { paddingVertical: 16, borderRadius: radius.lg }, pressed && styles.pressed]}>
+      <Avatar name={person.name} size={52} />
+      <View style={{ flex: 1, gap: 4 }}>
+        <Text style={{ fontSize: font.md + 1, fontWeight: '700', color: colors.text }} numberOfLines={1}>
+          {person.name}
+        </Text>
+        <View style={[styles.row, { gap: 6 }]}>
+          <Text style={styles.muted}>{t.contactTypes[person.type]}</Text>
+          {late > 0 ? <Pill text={`⏱ ${t.lateBy(late)}`} tone="danger" /> : null}
+        </View>
+      </View>
+      <View style={{ alignItems: 'flex-end', gap: 2 }}>
+        {balances.length ? (
+          balances.map((b) => (
+            <View key={b.label} style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: font.xs, fontWeight: '600', color: b.color }}>{b.label}</Text>
+              <Text style={{ fontSize: font.md, fontWeight: '800', color: b.color }}>{formatMoney(b.amount, lang)}</Text>
+            </View>
+          ))
+        ) : (
+          <Text style={{ fontSize: font.sm, fontWeight: '600', color: colors.muted }}>{t.settled}</Text>
+        )}
+      </View>
+    </Pressable>
   );
 }

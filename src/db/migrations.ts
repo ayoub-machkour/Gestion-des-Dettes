@@ -1,28 +1,8 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
-/** Colonnes des tables suivies par le système d'annulation (undo). */
-export const TRACKED_TABLES: Record<string, string[]> = {
-  contacts: ['id', 'name', 'type', 'phone', 'notes', 'created_at'],
-  transactions: [
-    'id', 'contact_id', 'direction', 'transaction_type', 'description', 'crop', 'total_amount',
-    'upfront_paid', 'paid_amount', 'status', 'transaction_date', 'due_date', 'created_at',
-  ],
-  payroll_entries: [
-    'id', 'contact_id', 'work_type', 'crop', 'days_worked', 'daily_rate', 'total_due',
-    'upfront_paid', 'paid_amount', 'work_date', 'status', 'created_at',
-  ],
-  instruments: [
-    'id', 'transaction_id', 'payroll_entry_id', 'contact_id', 'direction', 'instrument_type', 'amount',
-    'issue_date', 'maturity_due_date', 'status', 'reference_number', 'reminder_days_before', 'created_at',
-  ],
-  attachments: ['id', 'entity_type', 'entity_id', 'file_name', 'created_at'],
-  activity_log: [
-    'id', 'created_at', 'action', 'entity_type', 'entity_id', 'contact_id', 'contact_name', 'direction', 'amount', 'details',
-  ],
-};
-
+/** Schéma complet actuel (installation neuve). */
 export const SCHEMA_SQL = `
   CREATE TABLE contacts (
     id TEXT PRIMARY KEY NOT NULL,
@@ -34,7 +14,7 @@ export const SCHEMA_SQL = `
   );
 
   -- direction : PAYABLE = je dois ; RECEIVABLE = on me doit.
-  -- paid_amount / status sont un cache recalculé (upfront_paid + versements répartis).
+  -- paid_amount / status sont un cache recalculé (upfront_paid + paiements répartis).
   CREATE TABLE transactions (
     id TEXT PRIMARY KEY NOT NULL,
     contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
@@ -49,6 +29,16 @@ export const SCHEMA_SQL = `
     transaction_date TEXT NOT NULL,
     due_date TEXT,
     created_at TEXT NOT NULL
+  );
+
+  -- Articles d'un achat / d'une vente (désignation, quantité × prix unitaire).
+  CREATE TABLE transaction_items (
+    id TEXT PRIMARY KEY NOT NULL,
+    transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    unit_price INTEGER NOT NULL
   );
 
   CREATE TABLE payroll_entries (
@@ -66,7 +56,7 @@ export const SCHEMA_SQL = `
     created_at TEXT NOT NULL
   );
 
-  -- Chèques, traites, billets à ordre, et versements espèces (CASH, toujours DEBITED_PAID).
+  -- Chèques, traites, billets à ordre, et paiements espèces (CASH, toujours DEBITED_PAID).
   CREATE TABLE instruments (
     id TEXT PRIMARY KEY NOT NULL,
     transaction_id TEXT REFERENCES transactions(id) ON DELETE SET NULL,
@@ -83,7 +73,7 @@ export const SCHEMA_SQL = `
     created_at TEXT NOT NULL
   );
 
-  -- Photos justificatives : entity_type T (dette), P (paie), I (effet / versement).
+  -- Photos justificatives : entity_type T (achat), P (paie), I (paiement / effet).
   CREATE TABLE attachments (
     id TEXT PRIMARY KEY NOT NULL,
     entity_type TEXT NOT NULL CHECK (entity_type IN ('T','P','I')),
@@ -111,12 +101,8 @@ export const SCHEMA_SQL = `
     value TEXT NOT NULL
   );
 
-  CREATE TABLE undo_state (id INTEGER PRIMARY KEY CHECK (id = 1), grp INTEGER NOT NULL, active INTEGER NOT NULL);
-  INSERT INTO undo_state (id, grp, active) VALUES (1, 0, 1);
-  CREATE TABLE undo_groups (grp INTEGER PRIMARY KEY NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL);
-  CREATE TABLE undo_log (seq INTEGER PRIMARY KEY AUTOINCREMENT, grp INTEGER NOT NULL, sql TEXT NOT NULL);
-
   CREATE INDEX idx_tx_contact ON transactions(contact_id, direction, transaction_date);
+  CREATE INDEX idx_items_tx ON transaction_items(transaction_id, position);
   CREATE INDEX idx_instr_maturity ON instruments(status, maturity_due_date);
   CREATE INDEX idx_instr_contact ON instruments(contact_id);
   CREATE INDEX idx_payroll_contact ON payroll_entries(contact_id, work_date);
@@ -125,30 +111,24 @@ export const SCHEMA_SQL = `
   CREATE INDEX idx_log_contact ON activity_log(contact_id);
 `;
 
-/**
- * Triggers d'annulation (technique « automatic undo » de sqlite.org) :
- * chaque modification enregistre l'instruction SQL inverse dans undo_log.
- */
-export function undoTriggersSql(): string {
-  const parts: string[] = [];
-  const when = 'WHEN (SELECT active FROM undo_state WHERE id = 1) = 1';
-  const grp = '(SELECT grp FROM undo_state WHERE id = 1)';
-  for (const [table, cols] of Object.entries(TRACKED_TABLES)) {
-    const setOld = cols.map((c) => `'${c}=' || quote(old.${c})`).join(" || ',' || ");
-    const valuesOld = cols.map((c) => `quote(old.${c})`).join(" || ',' || ");
-    parts.push(`
-      CREATE TRIGGER undo_${table}_ins AFTER INSERT ON ${table} ${when} BEGIN
-        INSERT INTO undo_log (grp, sql) VALUES (${grp}, 'DELETE FROM ${table} WHERE id=' || quote(new.id));
-      END;
-      CREATE TRIGGER undo_${table}_upd AFTER UPDATE ON ${table} ${when} BEGIN
-        INSERT INTO undo_log (grp, sql) VALUES (${grp}, 'UPDATE ${table} SET ' || ${setOld} || ' WHERE id=' || quote(old.id));
-      END;
-      CREATE TRIGGER undo_${table}_del BEFORE DELETE ON ${table} ${when} BEGIN
-        INSERT INTO undo_log (grp, sql) VALUES (${grp}, 'INSERT INTO ${table} (${cols.join(',')}) VALUES (' || ${valuesOld} || ')');
-      END;`);
-  }
-  return parts.join('\n');
-}
+/** v1 -> v2 : articles multiples par achat ; suppression du système d'annulation (undo). */
+const V1_TO_V2 = `
+  CREATE TABLE transaction_items (
+    id TEXT PRIMARY KEY NOT NULL,
+    transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    unit_price INTEGER NOT NULL
+  );
+  CREATE INDEX idx_items_tx ON transaction_items(transaction_id, position);
+  ${['contacts', 'transactions', 'payroll_entries', 'instruments', 'attachments', 'activity_log']
+    .flatMap((table) => ['ins', 'upd', 'del'].map((op) => `DROP TRIGGER IF EXISTS undo_${table}_${op};`))
+    .join('\n')}
+  DROP TABLE IF EXISTS undo_log;
+  DROP TABLE IF EXISTS undo_groups;
+  DROP TABLE IF EXISTS undo_state;
+`;
 
 export async function migrateDb(db: SQLiteDatabase) {
   await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
@@ -157,10 +137,11 @@ export async function migrateDb(db: SQLiteDatabase) {
   if (version >= DB_VERSION) return;
 
   await db.withTransactionAsync(async () => {
-    if (version === 0) {
-      await db.execAsync(SCHEMA_SQL);
-      await db.execAsync(undoTriggersSql());
-    }
+    if (version === 0) await db.execAsync(SCHEMA_SQL);
+    if (version === 1) await db.execAsync(V1_TO_V2);
     await db.execAsync(`PRAGMA user_version = ${DB_VERSION}`);
   });
 }
+
+/** Utilisé par les tests pour vérifier la migration d'une base v1. */
+export const MIGRATION_V1_TO_V2 = V1_TO_V2;

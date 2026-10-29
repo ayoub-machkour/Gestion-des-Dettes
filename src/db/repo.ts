@@ -7,30 +7,27 @@ import type {
   Attachment,
   ContactType,
   ContactWithBalance,
-  Crop,
-  CropSummary,
-  DashboardData,
   Direction,
   EntityType,
-  Instrument,
   InstrumentStatus,
   InstrumentType,
   InstrumentWithContact,
-  LateRow,
   LedgerRow,
   PayrollEntry,
+  TimelineRow,
   Transaction,
+  TransactionItem,
   TransactionStatus,
-  TransactionType,
   WorkType,
 } from './types';
-import { runAction } from './undo';
 
 export function statusFor(total: number, paid: number): TransactionStatus {
   if (paid <= 0 && total > 0) return 'UNPAID';
   if (paid >= total) return 'PAID';
   return 'PARTIAL';
 }
+
+export const itemTotal = (i: TransactionItem) => Math.round(i.quantity * i.unit_price);
 
 const nowIso = () => new Date().toISOString();
 
@@ -45,7 +42,7 @@ export async function setSetting(db: SQLiteDatabase, key: string, value: string)
   await db.runAsync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', key, value);
 }
 
-// ---------- Journal + annulation ----------
+// ---------- Journal ----------
 
 export interface LogInput {
   action: ActivityAction;
@@ -77,22 +74,36 @@ async function insertLog(db: SQLiteDatabase, entry: LogInput) {
   );
 }
 
-/** Action annulable + écrite au journal. Le libellé d'annulation est l'entrée de journal en JSON. */
+/** Exécute une action dans une transaction SQL et l'écrit au journal. */
 async function act<T>(db: SQLiteDatabase, entry: LogInput, task: () => Promise<T>, logBefore = false): Promise<T> {
-  return runAction(db, JSON.stringify(entry), async () => {
+  let result!: T;
+  await db.withTransactionAsync(async () => {
     // Pour une suppression, on journalise avant (le nom du contact existe encore).
     if (logBefore) await insertLog(db, entry);
-    const result = await task();
+    result = await task();
     if (!logBefore) await insertLog(db, { ...entry, entityId: entry.entityId ?? (typeof result === 'string' ? result : null) });
-    return result;
   });
+  return result;
+}
+
+async function insertPhotos(db: SQLiteDatabase, entityType: EntityType, entityId: string, fileNames: string[] = []) {
+  for (const fileName of fileNames) {
+    await db.runAsync(
+      'INSERT INTO attachments (id, entity_type, entity_id, file_name, created_at) VALUES (?, ?, ?, ?, ?)',
+      randomUUID(),
+      entityType,
+      entityId,
+      fileName,
+      nowIso(),
+    );
+  }
 }
 
 // ---------- Recalcul des soldes ----------
 
 /**
  * Recalcule paid_amount / status des dettes d'un contact à partir des montants payés à la saisie
- * et des versements (espèces + effets débités) : d'abord vers la dette ciblée, puis les plus anciennes.
+ * et des paiements (espèces + effets débités) : d'abord vers la dette ciblée, puis les plus anciennes.
  * Déterministe : modifier ou supprimer n'importe quelle opération reste cohérent.
  */
 export async function recomputeContact(db: SQLiteDatabase, contactId: string) {
@@ -167,13 +178,13 @@ const CONTACT_SELECT = `
     (SELECT MAX(CAST(julianday($today) - julianday(due_date) AS INTEGER)) FROM transactions
       WHERE contact_id = c.id AND direction = 'PAYABLE' AND status != 'PAID' AND due_date < $today) AS late_payable,
     (SELECT MAX(CAST(julianday($today) - julianday(due_date) AS INTEGER)) FROM transactions
-      WHERE contact_id = c.id AND direction = 'RECEIVABLE' AND status != 'PAID' AND due_date < $today) AS late_receivable
+      WHERE contact_id = c.id AND direction = 'RECEIVABLE' AND status != 'PAID' AND due_date < $today) AS late_receivable,
+    (SELECT MAX(created_at) FROM activity_log WHERE contact_id = c.id) AS last_activity,
+    (SELECT MAX(rowid) FROM activity_log WHERE contact_id = c.id) AS last_seq
   FROM contacts c`;
 
-export async function listContacts(
-  db: SQLiteDatabase,
-  opts: { type?: ContactType | null; search?: string; direction?: Direction | null } = {},
-): Promise<ContactWithBalance[]> {
+/** Contacts, les plus récemment utilisés en premier. */
+export async function listContacts(db: SQLiteDatabase, opts: { type?: ContactType | null; search?: string } = {}): Promise<ContactWithBalance[]> {
   const where: string[] = [];
   const params: Record<string, string> = { $today: today() };
   if (opts.type) {
@@ -184,43 +195,29 @@ export async function listContacts(
     where.push('c.name LIKE $search');
     params.$search = `%${opts.search.trim()}%`;
   }
-  const rows = await db.getAllAsync<ContactWithBalance>(
-    `${CONTACT_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY c.name COLLATE NOCASE`,
+  return db.getAllAsync<ContactWithBalance>(
+    `${CONTACT_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+     ORDER BY last_seq DESC`,
     params,
   );
-  if (opts.direction === 'PAYABLE') return rows.filter((r) => r.payable > 0).sort((a, b) => b.payable - a.payable);
-  if (opts.direction === 'RECEIVABLE') return rows.filter((r) => r.receivable > 0).sort((a, b) => b.receivable - a.receivable);
-  return rows.sort((a, b) => Math.max(b.payable, b.receivable) - Math.max(a.payable, a.receivable));
 }
 
 export async function getContact(db: SQLiteDatabase, id: string): Promise<ContactWithBalance | null> {
   return db.getFirstAsync<ContactWithBalance>(`${CONTACT_SELECT} WHERE c.id = $id`, { $today: today(), $id: id });
 }
 
-export async function saveContact(
-  db: SQLiteDatabase,
-  input: { id?: string; name: string; type: ContactType; phone?: string; notes?: string },
-): Promise<string> {
-  const phone = input.phone?.trim() || null;
-  const notes = input.notes?.trim() || null;
+export async function saveContact(db: SQLiteDatabase, input: { id?: string; name: string; type: ContactType }): Promise<string> {
+  const name = input.name.trim();
   if (input.id) {
     const id = input.id;
-    return act(db, { action: 'CONTACT_EDITED', contactId: id, details: input.name.trim() }, async () => {
-      await db.runAsync('UPDATE contacts SET name = ?, type = ?, phone = ?, notes = ? WHERE id = ?', input.name.trim(), input.type, phone, notes, id);
+    return act(db, { action: 'CONTACT_EDITED', contactId: id, details: name }, async () => {
+      await db.runAsync('UPDATE contacts SET name = ?, type = ? WHERE id = ?', name, input.type, id);
       return id;
     });
   }
   const id = randomUUID();
-  return act(db, { action: 'CONTACT_ADDED', contactId: id, details: input.name.trim() }, async () => {
-    await db.runAsync(
-      'INSERT INTO contacts (id, name, type, phone, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-      id,
-      input.name.trim(),
-      input.type,
-      phone,
-      notes,
-      nowIso(),
-    );
+  return act(db, { action: 'CONTACT_ADDED', contactId: id, details: name }, async () => {
+    await db.runAsync('INSERT INTO contacts (id, name, type, created_at) VALUES (?, ?, ?, ?)', id, name, input.type, nowIso());
     return id;
   });
 }
@@ -242,52 +239,75 @@ export async function deleteContact(db: SQLiteDatabase, id: string) {
   );
 }
 
-// ---------- Dettes / créances ----------
+// ---------- Achats / crédits ----------
 
 export interface TransactionInput {
   contactId: string;
   direction: Direction;
-  type: TransactionType;
-  description: string;
-  crop: Crop | null;
-  total: number;
+  items: TransactionItem[];
   upfrontPaid: number;
   date: string;
   dueDate: string | null;
+  photos?: string[];
 }
 
 export async function getTransaction(db: SQLiteDatabase, id: string): Promise<Transaction | null> {
   return db.getFirstAsync<Transaction>('SELECT * FROM transactions WHERE id = ?', id);
 }
 
+/** Articles d'un achat ; une ancienne opération sans article devient un article unique. */
+export async function getTransactionItems(db: SQLiteDatabase, tx: Transaction): Promise<TransactionItem[]> {
+  const items = await db.getAllAsync<TransactionItem>(
+    'SELECT name, quantity, unit_price FROM transaction_items WHERE transaction_id = ? ORDER BY position',
+    tx.id,
+  );
+  return items.length ? items : [{ name: tx.description, quantity: 1, unit_price: tx.total_amount }];
+}
+
 export async function saveTransaction(db: SQLiteDatabase, input: TransactionInput, id?: string): Promise<string> {
-  const values = [
-    input.contactId,
-    input.direction,
-    input.type,
-    input.description.trim(),
-    input.crop,
-    input.total,
-    input.upfrontPaid,
-    input.date,
-    input.dueDate,
-  ];
+  const items = input.items.map((i) => ({ ...i, name: i.name.trim() }));
+  const total = items.reduce((sum, i) => sum + itemTotal(i), 0);
+  const description = items.map((i) => i.name).filter(Boolean).join(' · ');
+  const type = input.direction === 'PAYABLE' ? 'DEBT_ITEM' : 'SALE_ON_CREDIT';
+  const upfront = Math.min(input.upfrontPaid, total);
+
+  const writeItems = async (txId: string) => {
+    await db.runAsync('DELETE FROM transaction_items WHERE transaction_id = ?', txId);
+    for (const [position, i] of items.entries()) {
+      await db.runAsync(
+        'INSERT INTO transaction_items (id, transaction_id, position, name, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?)',
+        randomUUID(),
+        txId,
+        position,
+        i.name,
+        i.quantity,
+        i.unit_price,
+      );
+    }
+  };
+
   if (id) {
-    const previous = await getTransaction(db, id);
     return act(
       db,
-      { action: 'EDITED', entityType: 'T', entityId: id, contactId: input.contactId, direction: input.direction, amount: input.total, details: input.description },
+      { action: 'EDITED', entityType: 'T', entityId: id, contactId: input.contactId, direction: input.direction, amount: total, details: description },
       async () => {
         await db.runAsync(
-          `UPDATE transactions SET contact_id = ?, direction = ?, transaction_type = ?, description = ?, crop = ?,
-                  total_amount = ?, upfront_paid = ?, transaction_date = ?, due_date = ? WHERE id = ?`,
-          ...values,
+          `UPDATE transactions SET direction = ?, transaction_type = ?, description = ?, total_amount = ?, upfront_paid = ?,
+                  transaction_date = ?, due_date = ? WHERE id = ?`,
+          input.direction,
+          type,
+          description,
+          total,
+          upfront,
+          input.date,
+          input.dueDate,
           id,
         );
-        // Un versement ciblé doit rester chez le même contact et dans le même sens.
-        await db.runAsync('UPDATE instruments SET transaction_id = NULL WHERE transaction_id = ? AND (contact_id != ? OR direction != ?)', id, input.contactId, input.direction);
+        await writeItems(id);
+        // Un paiement ciblé doit rester dans le même sens que la dette.
+        await db.runAsync('UPDATE instruments SET transaction_id = NULL WHERE transaction_id = ? AND direction != ?', id, input.direction);
+        await insertPhotos(db, 'T', id, input.photos);
         await recomputeContact(db, input.contactId);
-        if (previous && previous.contact_id !== input.contactId) await recomputeContact(db, previous.contact_id);
         return id;
       },
     );
@@ -295,16 +315,25 @@ export async function saveTransaction(db: SQLiteDatabase, input: TransactionInpu
   const newId = randomUUID();
   return act(
     db,
-    { action: 'CREDIT_ADDED', entityType: 'T', contactId: input.contactId, direction: input.direction, amount: input.total, details: input.description },
+    { action: 'CREDIT_ADDED', entityType: 'T', contactId: input.contactId, direction: input.direction, amount: total, details: description },
     async () => {
       await db.runAsync(
-        `INSERT INTO transactions (contact_id, direction, transaction_type, description, crop, total_amount, upfront_paid,
-                                   transaction_date, due_date, id, paid_amount, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'UNPAID', ?)`,
-        ...values,
+        `INSERT INTO transactions (id, contact_id, direction, transaction_type, description, total_amount, upfront_paid,
+                                   paid_amount, status, transaction_date, due_date, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'UNPAID', ?, ?, ?)`,
         newId,
+        input.contactId,
+        input.direction,
+        type,
+        description,
+        total,
+        upfront,
+        input.date,
+        input.dueDate,
         nowIso(),
       );
+      await writeItems(newId);
+      await insertPhotos(db, 'T', newId, input.photos);
       await recomputeContact(db, input.contactId);
       return newId;
     },
@@ -315,7 +344,6 @@ export async function saveTransaction(db: SQLiteDatabase, input: TransactionInpu
 
 export interface PayrollInput {
   workType: WorkType;
-  crop: Crop | null;
   days: number;
   rate: number;
   date: string;
@@ -326,20 +354,18 @@ export async function getPayroll(db: SQLiteDatabase, id: string): Promise<Payrol
   return db.getFirstAsync<PayrollEntry>('SELECT * FROM payroll_entries WHERE id = ?', id);
 }
 
+/** Une ligne de paie par ouvrier, en une seule transaction ; une ligne de journal par ouvrier. */
 export async function createPayrollGroup(db: SQLiteDatabase, contactIds: string[], input: PayrollInput) {
   const totalDue = Math.round(input.days * input.rate);
-  // Une seule action annulable, mais une ligne de journal par ouvrier.
-  const label: LogInput = { action: 'PAYROLL_ADDED', direction: 'PAYABLE', amount: totalDue * contactIds.length, details: String(contactIds.length) };
-  await runAction(db, JSON.stringify(label), async () => {
+  await db.withTransactionAsync(async () => {
     for (const contactId of contactIds) {
       const id = randomUUID();
       await db.runAsync(
-        `INSERT INTO payroll_entries (id, contact_id, work_type, crop, days_worked, daily_rate, total_due, upfront_paid, paid_amount, work_date, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'PENDING_PAYMENT', ?)`,
+        `INSERT INTO payroll_entries (id, contact_id, work_type, days_worked, daily_rate, total_due, upfront_paid, paid_amount, work_date, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 'PENDING_PAYMENT', ?)`,
         id,
         contactId,
         input.workType,
-        input.crop,
         input.days,
         input.rate,
         totalDue,
@@ -359,9 +385,8 @@ export async function updatePayroll(db: SQLiteDatabase, id: string, input: Omit<
   const totalDue = Math.round(input.days * input.rate);
   await act(db, { action: 'EDITED', entityType: 'P', entityId: id, contactId: entry.contact_id, direction: 'PAYABLE', amount: totalDue }, async () => {
     await db.runAsync(
-      'UPDATE payroll_entries SET work_type = ?, crop = ?, days_worked = ?, daily_rate = ?, total_due = ?, upfront_paid = ?, work_date = ? WHERE id = ?',
+      'UPDATE payroll_entries SET work_type = ?, days_worked = ?, daily_rate = ?, total_due = ?, upfront_paid = ?, work_date = ? WHERE id = ?',
       input.workType,
-      input.crop,
       input.days,
       input.rate,
       totalDue,
@@ -373,16 +398,37 @@ export async function updatePayroll(db: SQLiteDatabase, id: string, input: Omit<
   });
 }
 
-// ---------- Grand livre ----------
+// ---------- Fiche d'une personne ----------
 
+export async function getTimeline(db: SQLiteDatabase, contactId: string): Promise<TimelineRow[]> {
+  return db.getAllAsync<TimelineRow>(
+    `SELECT 'T' AS kind, id, transaction_date AS d, created_at AS c, description AS title, transaction_type AS sub, direction,
+            total_amount AS amount, paid_amount AS paid, due_date AS due, status, NULL AS days, NULL AS rate,
+            (SELECT COUNT(*) FROM attachments a WHERE a.entity_type = 'T' AND a.entity_id = t.id) AS photos
+       FROM transactions t WHERE contact_id = $c
+     UNION ALL
+     SELECT 'P', id, work_date, created_at, NULL, work_type, 'PAYABLE', total_due, paid_amount, NULL, status, days_worked, daily_rate,
+            (SELECT COUNT(*) FROM attachments a WHERE a.entity_type = 'P' AND a.entity_id = p.id)
+       FROM payroll_entries p WHERE contact_id = $c
+     UNION ALL
+     SELECT 'I', id, CASE WHEN instrument_type = 'CASH' THEN issue_date ELSE maturity_due_date END, created_at, reference_number,
+            instrument_type, direction, amount, NULL, maturity_due_date, status, NULL, NULL,
+            (SELECT COUNT(*) FROM attachments a WHERE a.entity_type = 'I' AND a.entity_id = i.id)
+       FROM instruments i WHERE contact_id = $c
+     ORDER BY d DESC, c DESC`,
+    { $c: contactId },
+  );
+}
+
+/** Lignes achat / paie d'un contact (relevé de compte). */
 export async function getLedger(db: SQLiteDatabase, contactId: string): Promise<LedgerRow[]> {
   return db.getAllAsync<LedgerRow>(
-    `SELECT 'T' AS kind, id, direction, transaction_date AS d, description AS label, transaction_type AS sub, crop,
+    `SELECT 'T' AS kind, id, direction, transaction_date AS d, description AS label, transaction_type AS sub,
             total_amount AS total, paid_amount AS paid, due_date AS due, NULL AS days, NULL AS rate, created_at AS c,
             (SELECT COUNT(*) FROM attachments a WHERE a.entity_type = 'T' AND a.entity_id = t.id) AS photos
        FROM transactions t WHERE contact_id = $c
      UNION ALL
-     SELECT 'P', id, 'PAYABLE', work_date, '', work_type, crop, total_due, paid_amount, NULL, days_worked, daily_rate, created_at,
+     SELECT 'P', id, 'PAYABLE', work_date, '', work_type, total_due, paid_amount, NULL, days_worked, daily_rate, created_at,
             (SELECT COUNT(*) FROM attachments a WHERE a.entity_type = 'P' AND a.entity_id = p.id)
        FROM payroll_entries p WHERE contact_id = $c
      ORDER BY d, c`,
@@ -390,7 +436,7 @@ export async function getLedger(db: SQLiteDatabase, contactId: string): Promise<
   );
 }
 
-/** Supprime une dette / paie / un effet (les photos liées suivent, annulable). */
+/** Supprime un achat / une paie / un paiement (les photos liées suivent). */
 export async function deleteEntity(db: SQLiteDatabase, kind: EntityType, id: string) {
   const table = { T: 'transactions', P: 'payroll_entries', I: 'instruments' }[kind];
   const row = await db.getFirstAsync<{ contact_id: string; amount: number; direction: Direction | null }>(
@@ -411,7 +457,7 @@ export async function deleteEntity(db: SQLiteDatabase, kind: EntityType, id: str
   );
 }
 
-// ---------- Effets et versements ----------
+// ---------- Paiements et effets ----------
 
 export interface InstrumentInput {
   contactId: string;
@@ -424,6 +470,7 @@ export interface InstrumentInput {
   maturityDate: string;
   reference: string;
   reminderDays: number;
+  photos?: string[];
 }
 
 export async function getInstrument(db: SQLiteDatabase, id: string): Promise<InstrumentWithContact | null> {
@@ -450,7 +497,6 @@ export async function saveInstrument(db: SQLiteDatabase, input: InstrumentInput,
     cash ? 0 : input.reminderDays,
   ];
   if (id) {
-    const previous = await getInstrument(db, id);
     return act(db, { action: 'EDITED', entityType: 'I', entityId: id, contactId: input.contactId, direction: input.direction, amount: input.amount }, async () => {
       await db.runAsync(
         `UPDATE instruments SET transaction_id = ?, payroll_entry_id = ?, contact_id = ?, direction = ?, instrument_type = ?, amount = ?,
@@ -459,8 +505,8 @@ export async function saveInstrument(db: SQLiteDatabase, input: InstrumentInput,
         ...values,
         id,
       );
+      await insertPhotos(db, 'I', id, input.photos);
       await recomputeContact(db, input.contactId);
-      if (previous && previous.contact_id !== input.contactId) await recomputeContact(db, previous.contact_id);
       return id;
     });
   }
@@ -485,33 +531,43 @@ export async function saveInstrument(db: SQLiteDatabase, input: InstrumentInput,
         cash ? 'DEBITED_PAID' : 'PENDING',
         nowIso(),
       );
+      await insertPhotos(db, 'I', newId, input.photos);
       await recomputeContact(db, input.contactId);
       return newId;
     },
   );
 }
 
-/** Versement espèces (je paie / je reçois), éventuellement ciblé sur une ligne. */
-export async function recordCashPayment(
+/** Paiement espèces (je paie / je reçois), éventuellement ciblé sur un achat ou une paie. */
+export async function savePayment(
   db: SQLiteDatabase,
-  contactId: string,
-  direction: Direction,
-  amount: number,
-  target?: { kind: 'T' | 'P'; id: string } | null,
+  input: {
+    contactId: string;
+    direction: Direction;
+    amount: number;
+    date: string;
+    target?: { kind: 'T' | 'P'; id: string } | null;
+    photos?: string[];
+  },
+  id?: string,
 ) {
-  const date = today();
-  return saveInstrument(db, {
-    contactId,
-    direction,
-    transactionId: target?.kind === 'T' ? target.id : null,
-    payrollEntryId: target?.kind === 'P' ? target.id : null,
-    type: 'CASH',
-    amount,
-    issueDate: date,
-    maturityDate: date,
-    reference: '',
-    reminderDays: 0,
-  });
+  return saveInstrument(
+    db,
+    {
+      contactId: input.contactId,
+      direction: input.direction,
+      transactionId: input.target?.kind === 'T' ? input.target.id : null,
+      payrollEntryId: input.target?.kind === 'P' ? input.target.id : null,
+      type: 'CASH',
+      amount: input.amount,
+      issueDate: input.date,
+      maturityDate: input.date,
+      reference: '',
+      reminderDays: 0,
+      photos: input.photos,
+    },
+    id,
+  );
 }
 
 export async function setInstrumentStatus(db: SQLiteDatabase, id: string, status: Extract<InstrumentStatus, 'DEBITED_PAID' | 'CANCELLED'>) {
@@ -560,9 +616,13 @@ export async function listInstruments(
   );
 }
 
-export async function listOpenItems(db: SQLiteDatabase, contactId: string, direction: Direction): Promise<LedgerRow[]> {
-  const rows = await getLedger(db, contactId);
-  return rows.filter((r) => r.direction === direction && r.total > r.paid);
+/** Chèques / traites en attente qui arrivent à échéance sous 7 jours (ou en retard). */
+export async function countDueInstruments(db: SQLiteDatabase): Promise<number> {
+  const row = await db.getFirstAsync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM instruments WHERE status = 'PENDING' AND instrument_type != 'CASH' AND maturity_due_date <= ?",
+    addDays(today(), 7),
+  );
+  return row?.n ?? 0;
 }
 
 // ---------- Photos justificatives ----------
@@ -578,16 +638,7 @@ async function entityContact(db: SQLiteDatabase, entityType: EntityType, entityI
 
 export async function addAttachment(db: SQLiteDatabase, entityType: EntityType, entityId: string, fileName: string) {
   const contactId = await entityContact(db, entityType, entityId);
-  await act(db, { action: 'PHOTO_ADDED', entityType, entityId, contactId }, async () => {
-    await db.runAsync(
-      'INSERT INTO attachments (id, entity_type, entity_id, file_name, created_at) VALUES (?, ?, ?, ?, ?)',
-      randomUUID(),
-      entityType,
-      entityId,
-      fileName,
-      nowIso(),
-    );
-  });
+  await act(db, { action: 'PHOTO_ADDED', entityType, entityId, contactId }, () => insertPhotos(db, entityType, entityId, [fileName]));
 }
 
 export async function deleteAttachment(db: SQLiteDatabase, attachment: Attachment) {
@@ -597,41 +648,25 @@ export async function deleteAttachment(db: SQLiteDatabase, attachment: Attachmen
   });
 }
 
-/** Fichiers encore utiles : référencés par une photo ou par une annulation possible. */
 export async function referencedFileNames(db: SQLiteDatabase): Promise<Set<string>> {
-  const live = await db.getAllAsync<{ file_name: string }>('SELECT file_name FROM attachments');
-  const undo = await db.getAllAsync<{ sql: string }>("SELECT sql FROM undo_log WHERE sql LIKE 'INSERT INTO attachments%'");
-  const names = new Set(live.map((r) => r.file_name));
-  for (const u of undo) for (const m of u.sql.matchAll(/'([\w-]+\.jpg)'/g)) names.add(m[1]);
-  return names;
+  const rows = await db.getAllAsync<{ file_name: string }>('SELECT file_name FROM attachments');
+  return new Set(rows.map((r) => r.file_name));
 }
 
 // ---------- Historique ----------
 
-export type HistoryFilter = 'ALL' | 'PAYABLE' | 'RECEIVABLE' | 'PAYMENTS' | 'INSTRUMENTS' | 'PAYROLL' | 'CHANGES';
+export type HistoryFilter = 'ALL' | 'CREDITS' | 'PAYMENTS' | 'INSTRUMENTS' | 'PAYROLL' | 'CHANGES';
 
-export async function listActivity(
-  db: SQLiteDatabase,
-  opts: { search?: string; contactId?: string; filter?: HistoryFilter; since?: string | null },
-): Promise<ActivityRow[]> {
+export async function listActivity(db: SQLiteDatabase, opts: { search?: string; filter?: HistoryFilter }): Promise<ActivityRow[]> {
   const where: string[] = ['1 = 1'];
   const params: Record<string, string> = {};
-  if (opts.contactId) {
-    where.push('l.contact_id = $contact');
-    params.$contact = opts.contactId;
-  }
   if (opts.search?.trim()) {
     where.push('(l.contact_name LIKE $q OR l.details LIKE $q)');
     params.$q = `%${opts.search.trim()}%`;
   }
-  if (opts.since) {
-    where.push('l.created_at >= $since');
-    params.$since = opts.since;
-  }
   const filters: Record<HistoryFilter, string | null> = {
     ALL: null,
-    PAYABLE: "l.direction = 'PAYABLE'",
-    RECEIVABLE: "l.direction = 'RECEIVABLE'",
+    CREDITS: "l.action = 'CREDIT_ADDED'",
     PAYMENTS: "l.action IN ('PAYMENT','INSTRUMENT_PAID')",
     INSTRUMENTS: "l.action IN ('INSTRUMENT_ADDED','INSTRUMENT_PAID','INSTRUMENT_CANCELLED')",
     PAYROLL: "l.entity_type = 'P'",
@@ -652,76 +687,4 @@ export async function listActivity(
       ORDER BY l.created_at DESC LIMIT 500`,
     params,
   );
-}
-
-// ---------- Cultures ----------
-
-export async function getCropSummary(db: SQLiteDatabase, since: string | null): Promise<CropSummary[]> {
-  const from = since ?? '0000-00-00';
-  const tx = await db.getAllAsync<{ crop: Crop | null; expenses: number; sales: number }>(
-    `SELECT crop,
-            SUM(CASE WHEN direction = 'PAYABLE' AND transaction_type = 'DEBT_ITEM' THEN total_amount ELSE 0 END) AS expenses,
-            SUM(CASE WHEN transaction_type = 'SALE_ON_CREDIT' THEN total_amount ELSE 0 END) AS sales
-       FROM transactions WHERE transaction_date >= ? GROUP BY crop`,
-    from,
-  );
-  const wages = await db.getAllAsync<{ crop: Crop | null; wages: number }>(
-    'SELECT crop, SUM(total_due) AS wages FROM payroll_entries WHERE work_date >= ? GROUP BY crop',
-    from,
-  );
-  const map = new Map<string, CropSummary>();
-  const get = (crop: Crop | null) => {
-    const k = crop ?? 'NONE';
-    if (!map.has(k)) map.set(k, { crop: k, expenses: 0, wages: 0, sales: 0 });
-    return map.get(k)!;
-  };
-  for (const r of tx) Object.assign(get(r.crop), { expenses: r.expenses, sales: r.sales });
-  for (const r of wages) get(r.crop).wages = r.wages;
-  return [...map.values()].filter((c) => c.expenses + c.wages + c.sales > 0);
-}
-
-// ---------- Tableau de bord ----------
-
-export async function getDashboard(db: SQLiteDatabase): Promise<DashboardData> {
-  const now = today();
-  const sums = await db.getFirstAsync<{ payable: number; receivable: number; payableLate: number; receivableLate: number }>(
-    `SELECT COALESCE(SUM(CASE WHEN direction = 'PAYABLE' THEN total_amount - paid_amount END), 0) AS payable,
-            COALESCE(SUM(CASE WHEN direction = 'RECEIVABLE' THEN total_amount - paid_amount END), 0) AS receivable,
-            COALESCE(SUM(direction = 'PAYABLE' AND due_date < $today), 0) AS payableLate,
-            COALESCE(SUM(direction = 'RECEIVABLE' AND due_date < $today), 0) AS receivableLate
-       FROM transactions WHERE status != 'PAID'`,
-    { $today: now },
-  );
-  const wages = await db.getFirstAsync<{ v: number }>(
-    "SELECT COALESCE(SUM(total_due - paid_amount), 0) AS v FROM payroll_entries WHERE status != 'PAID'",
-  );
-  const due = await db.getFirstAsync<{ soon: number; overdue: number; amount: number }>(
-    `SELECT COALESCE(SUM(maturity_due_date >= $today), 0) AS soon,
-            COALESCE(SUM(maturity_due_date < $today), 0) AS overdue,
-            COALESCE(SUM(amount), 0) AS amount
-       FROM instruments
-      WHERE status = 'PENDING' AND maturity_due_date <= $limit`,
-    { $today: now, $limit: addDays(now, 7) },
-  );
-  const upcoming = await listInstruments(db, { status: 'PENDING' });
-  const late = await db.getAllAsync<LateRow>(
-    `SELECT t.id, t.contact_id, c.name AS contact_name, t.direction, t.description,
-            t.total_amount - t.paid_amount AS rest, t.due_date
-       FROM transactions t JOIN contacts c ON c.id = t.contact_id
-      WHERE t.status != 'PAID' AND t.due_date < ?
-      ORDER BY t.due_date LIMIT 6`,
-    now,
-  );
-  return {
-    payableTotal: sums?.payable ?? 0,
-    receivableTotal: sums?.receivable ?? 0,
-    payableLate: sums?.payableLate ?? 0,
-    receivableLate: sums?.receivableLate ?? 0,
-    pendingWages: wages?.v ?? 0,
-    dueSoonCount: due?.soon ?? 0,
-    overdueCount: due?.overdue ?? 0,
-    dueSoonAmount: due?.amount ?? 0,
-    upcoming: upcoming.slice(0, 5),
-    late,
-  };
 }

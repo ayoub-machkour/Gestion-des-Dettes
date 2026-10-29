@@ -9,7 +9,7 @@
     "build:apk": "eas build -p android --profile preview",
     "build:store": "eas build -p android --profile production",
     "typecheck": "tsc --noEmit",
-    "test": "node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/register.mjs tests/utils.test.mts && node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/register.mjs tests/undo.test.mts && node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/register.mjs tests/repo.test.mts"
+    "test": "node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/register.mjs tests/utils.test.mts && node --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/register.mjs tests/repo.test.mts"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "9.2.1",
@@ -27,13 +27,12 @@
     "expo-sqlite": "~58.0.14",
     "expo-status-bar": "~58.0.4",
     "react": "19.3.0",
-    "react-native": "0.88.0",
+    "react-native": "0.88.1",
     "react-native-safe-area-context": "~5.10.1",
     "react-native-screens": "~4.30.0"
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
-    "eas-cli": "^27.1.0",
     "typescript": "~6.0.3"
   }
 }

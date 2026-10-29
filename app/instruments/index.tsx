@@ -2,7 +2,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { InstrumentCard } from '../../src/components/InstrumentCard';
-import { Btn, Chips, Empty, Screen, SectionTitle } from '../../src/components/ui';
+import { Empty, Screen, SectionHeader, Segmented } from '../../src/components/ui';
 import { listInstruments, setInstrumentStatus } from '../../src/db/repo';
 import type { InstrumentWithContact } from '../../src/db/types';
 import { useI18n } from '../../src/i18n';
@@ -13,7 +13,7 @@ export default function InstrumentsCalendar() {
   const db = useSQLiteContext();
   const router = useRouter();
   const { t } = useI18n();
-  const { version, done } = useAppState();
+  const { version, refresh } = useAppState();
   const [filter, setFilter] = useState<'PENDING' | 'ALL'>('PENDING');
   const [items, setItems] = useState<InstrumentWithContact[]>([]);
 
@@ -31,27 +31,26 @@ export default function InstrumentsCalendar() {
 
   return (
     <Screen>
-      <Btn label={t.actionInstrument} variant="earth" onPress={() => router.push('/instruments/new')} />
-      <Chips
+      <Segmented
         options={[
-          { value: 'PENDING' as const, label: t.filterPending },
-          { value: 'ALL' as const, label: t.filterAll },
+          { value: 'PENDING', label: t.filterPending },
+          { value: 'ALL', label: t.filterAll },
         ]}
         value={filter}
         onChange={setFilter}
       />
-      {items.length === 0 ? <Empty text={t.noInstruments} /> : null}
+      {items.length === 0 ? <Empty icon="📅" title={t.noInstrumentsTitle} text={t.noInstrumentsText} /> : null}
       {[...groups.entries()].map(([month, list]) => {
         const [y, m] = month.split('-').map(Number);
         return [
-          <SectionTitle key={month}>{`${t.months[m - 1]} ${y}`}</SectionTitle>,
+          <SectionHeader key={month} title={`${t.months[m - 1]} ${y}`} />,
           ...list.map((i) => (
             <InstrumentCard
               key={i.id}
               inst={i}
               onPress={() => router.push({ pathname: '/operation', params: { kind: 'I', id: i.id } })}
-              onMarkPaid={(id) => setInstrumentStatus(db, id, 'DEBITED_PAID').then(() => done())}
-              onCancel={(id) => setInstrumentStatus(db, id, 'CANCELLED').then(() => done())}
+              onMarkPaid={(id) => setInstrumentStatus(db, id, 'DEBITED_PAID').then(() => refresh())}
+              onCancel={(id) => setInstrumentStatus(db, id, 'CANCELLED').then(() => refresh())}
             />
           )),
         ];
